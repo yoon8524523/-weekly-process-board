@@ -745,6 +745,13 @@
 
   function renderPanel(row, listKey, title) {
     var items = row[listKey] || [];
+    var searchQuery = ui.filterText.trim().toLowerCase();
+    if (searchQuery) {
+      var authorMatched = items.filter(function (it) { return (it.author || "").toLowerCase().indexOf(searchQuery) !== -1; });
+      // only narrow down to matching authors when the search actually matches someone here;
+      // otherwise this row matched on Job No / name / manager / qty, so keep showing all items
+      if (authorMatched.length) items = authorMatched;
+    }
     var addKey = row.id + ":" + listKey;
     var addOpen = !!ui.addItem[addKey];
     var withSchedule = listKey === "status";
