@@ -815,7 +815,16 @@
     );
   }
 
+  var isComposing = false;   // true while any input/textarea has an active IME (e.g. Korean) composition
+  var renderPending = false; // a render was requested but deferred because composition was in progress
+  document.addEventListener("compositionstart", function () { isComposing = true; });
+  document.addEventListener("compositionend", function () {
+    isComposing = false;
+    if (renderPending) { renderPending = false; render(); }
+  });
+
   function render() {
+    if (isComposing) { renderPending = true; return; }
     var archive = ui.viewingArchive ? (state.archives || {})[ui.viewingArchive] : null;
     var sourceRows = archive ? (archive.rows || []) : (state.rows || []);
     canWriteNow = canWrite && !archive && dataLoaded;
@@ -1195,15 +1204,11 @@
     }
   });
 
-  var searchComposing = false;
-  document.addEventListener("compositionstart", function (e) {
-    if (e.target.id === "search-input") searchComposing = true;
-  });
-  document.addEventListener("compositionend", function (e) {
+  document.addEventListener("input", function (e) {
     if (e.target.id === "search-input") {
-      searchComposing = false;
       ui.filterText = e.target.value;
       saveUiDraft();
+      if (isComposing) return; // render() is deferred until compositionend anyway; don't touch focus/caret mid-IME
       var caret = e.target.selectionStart;
       render();
       var again = document.getElementById("search-input");
@@ -1211,9 +1216,8 @@
     }
   });
 
-  document.addEventListener("input", function (e) {
+  document.addEventListener("compositionend", function (e) {
     if (e.target.id === "search-input") {
-      if (searchComposing) return; // let the browser finish IME composition before re-rendering
       ui.filterText = e.target.value;
       saveUiDraft();
       var caret = e.target.selectionStart;
