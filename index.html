@@ -642,7 +642,7 @@
         '<div class="grid-fields">' +
           field("Job No", '<input id="nr-jobno" placeholder="예: 2650">') +
           field("수량", '<input id="nr-qty" placeholder="예: 1 LOT">') +
-          field("담당자", '<input id="nr-manager" placeholder="담당자 이름" value="' + escapeHtml(whoAmI()) + '">') +
+          field("Project Manager", '<input id="nr-manager" placeholder="Project Manager 이름" value="' + escapeHtml(whoAmI()) + '">') +
           field("PO Del.", '<input id="nr-podel" placeholder="예: 2026-09-30">') +
         '</div>' +
         field("프로젝트명 / 안건명", '<textarea id="nr-name" placeholder="예: OO케미칼 반응기 제작 공사"></textarea>') +
@@ -675,7 +675,7 @@
         '<div class="edit-fields">' +
           field("Job No", '<input id="er-jobno-' + row.id + '" value="' + escapeHtml(row.jobNo) + '">') +
           field("수량", '<input id="er-qty-' + row.id + '" value="' + escapeHtml(row.qty) + '">') +
-          field("담당자", '<input id="er-manager-' + row.id + '" value="' + escapeHtml(row.manager) + '">') +
+          field("Project Manager", '<input id="er-manager-' + row.id + '" value="' + escapeHtml(row.manager) + '">') +
           field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(row.poDel) + '">') +
         '</div>' +
         field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
@@ -705,7 +705,7 @@
         '</div>' +
         '<div class="meta-row">' +
           '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
-          '<span>담당자 <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
+          '<span>Project Manager <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
           '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
         '</div>' +
         '<div class="updated-at">최근 변경 ' + timeAgo(rowLatestTs(row)) + '</div>';
@@ -868,7 +868,7 @@
         (archive ? '<div class="archive-banner">📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장) <button class="chip-btn" type="button" data-action="exit-archive-view">현재로 돌아가기</button></div>' : "") +
       '</div>' +
       '<div class="toolbar">' +
-        '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 담당자 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
+        '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 이름 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
         '<div class="tabs">' +
           tab("all", "전체") + tab("project", "프로젝트") + tab("noncontract", "계약외") + tab("safety", "안전관리") +
         '</div>' +
@@ -924,7 +924,7 @@
     ["created", "등록순"],
     ["updated", "최근 변경순"],
     ["jobNo", "Job No순"],
-    ["manager", "담당자순"],
+    ["manager", "Project Manager순"],
     ["name", "이름순"]
   ];
 
@@ -1181,6 +1181,8 @@
           var it = (r[list] || []).find(function (x) { return x.id === itemId; });
           if (!it) return;
           it.text = newText;
+          it.author = whoAmI();
+          it.ts = nowIso();
           r.updatedAt = nowIso();
           pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 " + (list === "issues" ? "문제점" : "업무현황") + " 항목을 수정했습니다.");
         });
