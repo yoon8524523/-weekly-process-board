@@ -1,0 +1,1257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공정보드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef2f1;
+    --surface: #ffffff;
+    --surface-2: #f4f8f6;
+    --ink: #16211f;
+    --ink-muted: #55625f;
+    --line: #d7e0dd;
+    --accent: #0f6e64;
+    --accent-strong: #0a4b45;
+    --accent-soft: #e2f2ef;
+    --warn: #b5551b;
+    --warn-soft: #fbe9dd;
+    --good: #2f7d4f;
+    --good-soft: #e3f3e8;
+    --danger: #b23b3b;
+    --danger-soft: #f8e2e0;
+    --shadow: 0 1px 2px rgba(16, 30, 27, 0.06), 0 8px 24px rgba(16, 30, 27, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101716;
+      --surface: #182220;
+      --surface-2: #1d2927;
+      --ink: #e7efec;
+      --ink-muted: #9fb0ac;
+      --line: #2a3735;
+      --accent: #52d6c8;
+      --accent-strong: #8ff0e3;
+      --accent-soft: #17302d;
+      --warn: #f0975a;
+      --warn-soft: #3a2417;
+      --good: #7fd9a4;
+      --good-soft: #163326;
+      --danger: #e8837f;
+      --danger-soft: #3a1e1c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101716;
+    --surface: #182220;
+    --surface-2: #1d2927;
+    --ink: #e7efec;
+    --ink-muted: #9fb0ac;
+    --line: #2a3735;
+    --accent: #52d6c8;
+    --accent-strong: #8ff0e3;
+    --accent-soft: #17302d;
+    --warn: #f0975a;
+    --warn-soft: #3a2417;
+    --good: #7fd9a4;
+    --good-soft: #163326;
+    --danger: #e8837f;
+    --danger-soft: #3a1e1c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
+    font-size: 14.5px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { color: var(--accent-strong); }
+  button { font-family: inherit; }
+  ::selection { background: var(--accent-soft); }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 20px 20px 80px; }
+
+  /* ---------- header ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg);
+    padding: 14px 0 12px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+  }
+  .topbar-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .brand .sub { color: var(--ink-muted); font-size: 12.5px; }
+
+  .cal-anchor { position: relative; display: inline-block; }
+  .cal-popover {
+    position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 30;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 10px; width: 232px;
+  }
+  .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .cal-month-label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .cal-weekdays {
+    display: grid; grid-template-columns: repeat(7, 1fr); font-size: 10px;
+    color: var(--ink-muted); text-align: center; margin-bottom: 2px;
+  }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cal-cell {
+    position: relative; height: 30px; border: none; background: none; border-radius: 6px;
+    font-size: 12px; color: var(--ink); cursor: pointer; font-family: "IBM Plex Mono", monospace;
+  }
+  .cal-cell:hover { background: var(--surface-2); }
+  .cal-empty { cursor: default; }
+  .cal-empty:hover { background: none; }
+  .cal-today { box-shadow: inset 0 0 0 1px var(--accent); }
+  .cal-selected { box-shadow: inset 0 0 0 1.5px var(--accent-strong); color: var(--accent-strong); font-weight: 700; }
+  .cal-has-archive { background: var(--warn-soft); color: var(--warn); font-weight: 700; }
+  .cal-dot {
+    position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+    width: 5px; height: 5px; border-radius: 50%; background: var(--warn);
+  }
+  .cal-footer {
+    display: flex; align-items: center; gap: 4px; margin-top: 8px;
+    font-size: 10.5px; color: var(--ink-muted);
+  }
+  .cal-footer .cal-dot { position: static; transform: none; display: inline-block; }
+  .cal-legend-selected {
+    display: inline-block; width: 9px; height: 9px; border-radius: 3px;
+    box-shadow: inset 0 0 0 1.5px var(--accent-strong);
+  }
+  .archive-banner {
+    margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 8px 12px; font-size: 12.5px; color: var(--accent-strong);
+  }
+
+  .identity-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .identity { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted); }
+  .identity .who { color: var(--ink); font-weight: 600; }
+  .chip-btn {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted);
+    border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+  }
+  .chip-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+
+  .name-banner {
+    margin-top: 10px; display: flex; gap: 8px; align-items: center;
+    background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 8px 12px; font-size: 13px;
+  }
+  .name-banner input {
+    flex: 1; min-width: 120px; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font-size: 13px;
+  }
+
+  .mode-banner {
+    margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px;
+    background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn);
+  }
+
+  /* ---------- summary + filter ---------- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 4px; }
+  .stat-group { display: flex; gap: 6px; align-items: center; }
+  .stat { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; width: 58px; }
+  .stat b { font-family: "IBM Plex Mono", monospace; font-size: 13px; line-height: 1.1; }
+  .stat span { font-size: 9px; color: var(--ink-muted); margin-top: 1px; white-space: nowrap; }
+  .search { flex: 1; min-width: 140px; }
+  .search input {
+    width: 100%; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font-size: 13.5px;
+  }
+  .search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    display: inline-flex; align-items: center; justify-content: center; height: 34px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted);
+    padding: 0 9px; border-radius: 8px; font-size: 12px; white-space: nowrap; cursor: pointer;
+  }
+  .tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #04211d; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tab[aria-pressed="true"] { color: #04211d; } }
+  :root[data-theme="dark"] .tab[aria-pressed="true"] { color: #04211d; }
+
+  .sortbar { display: flex; align-items: center; gap: 6px; }
+  .sort-label { font-size: 11px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; }
+  #sort-select {
+    height: 34px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+    padding: 0 9px; border-radius: 10px; font-size: 13px; font-family: inherit;
+  }
+  .primary-btn {
+    display: inline-flex; align-items: center; justify-content: center; height: 34px;
+    border: none; background: var(--accent-strong); color: #fff; padding: 0 16px;
+    border-radius: 10px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  }
+  .primary-btn:hover { filter: brightness(1.08); }
+  .ghost-btn {
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+    padding: 8px 13px; border-radius: 10px; font-size: 13px; cursor: pointer;
+  }
+  .ghost-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .sort-dir-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 34px; padding: 0 10px; font-size: 13px; line-height: 1;
+  }
+  .text-btn {
+    border: none; background: none; color: var(--accent-strong); font-size: 12.5px;
+    cursor: pointer; padding: 2px 4px; font-weight: 600;
+  }
+  .icon-btn {
+    border: none; background: none; color: var(--ink-muted); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 3px 5px; border-radius: 6px;
+  }
+  .icon-btn:hover { background: var(--danger-soft); color: var(--danger); }
+  .danger-confirm { color: #fff; background: var(--danger); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+
+  button:focus-visible, input:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---------- activity ---------- */
+  details.activity { margin: 6px 0 18px; }
+  details.activity summary {
+    cursor: pointer; font-size: 12.5px; color: var(--ink-muted); list-style: none;
+    display: flex; align-items: center; gap: 6px; user-select: none;
+  }
+  details.activity summary::-webkit-details-marker { display: none; }
+  details.activity summary:before { content: "▸"; font-size: 10px; transition: transform .15s; }
+  details.activity[open] summary:before { transform: rotate(90deg); }
+  .activity-scroll { max-height: 114px; overflow-y: auto; margin-top: 8px; }
+  .activity-list { margin: 0; padding: 0 2px 0 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .activity-list li { font-size: 12.5px; color: var(--ink-muted); display: flex; gap: 8px; }
+  .activity-list b { color: var(--ink); font-weight: 600; }
+  .activity-list .t { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); white-space: nowrap; }
+
+  /* ---------- add row form ---------- */
+  .new-row-form {
+    background: var(--surface); border: 1px dashed var(--accent); border-radius: 14px;
+    padding: 14px; margin-bottom: 16px; display: grid; gap: 10px;
+  }
+  .grid-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 13.5px; font-family: inherit;
+  }
+  .field textarea { resize: vertical; min-height: 40px; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .radio-row { display: flex; gap: 14px; align-items: center; font-size: 13px; }
+  .radio-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+  /* ---------- cards ---------- */
+  .board { display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); overflow: hidden; position: relative;
+  }
+  .card:before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--accent);
+  }
+  .card.safety:before { background: var(--warn); }
+  .card.noncontract:before { background: var(--ink-muted); }
+  .card-head { padding: 14px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+  .card-head-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .card-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-strong);
+  }
+  .card.safety .badge { background: var(--warn-soft); color: var(--warn); }
+  .card.noncontract .badge { background: var(--surface-2); color: var(--ink-muted); }
+  .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
+  .card-title { font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
+  .issue-flag {
+    font-size: 11px; font-weight: 700; background: var(--warn-soft); color: var(--warn);
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 12.5px; color: var(--ink-muted); }
+  .meta-row b { color: var(--ink); font-weight: 600; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+  .updated-at { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
+
+  .edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+
+  .card-body { display: grid; grid-template-columns: 6fr 4fr; }
+  @media (max-width: 760px) { .card-body { grid-template-columns: 1fr; } }
+  .panel { padding: 12px 16px 14px 20px; }
+  .panel + .panel { border-left: 1px solid var(--line); }
+  @media (max-width: 760px) { .panel + .panel { border-left: none; border-top: 1px solid var(--line); } }
+  .panel h4 {
+    margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--ink-muted); font-weight: 700; display: flex; justify-content: space-between; align-items: center;
+  }
+  .item-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .item-list li {
+    display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; background: var(--surface-2);
+    border-radius: 8px; font-size: 13px;
+  }
+  .item-list.issues li { background: var(--danger-soft); }
+  .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .item-text { flex: 1; white-space: pre-line; }
+  .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .item-meta { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
+  .item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .empty-hint { font-size: 12.5px; color: var(--ink-muted); padding: 6px 2px; font-style: italic; }
+
+  .item-edit-row { margin-bottom: 4px; }
+  .item-edit-input {
+    width: 100%; min-height: 52px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--surface); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical;
+  }
+  .item-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+  .sched-chip {
+    flex-shrink: 0; border: 1px solid var(--line); background: var(--surface); color: var(--accent-strong);
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .sched-chip:hover { border-color: var(--accent); }
+  .sched-chip-empty { color: var(--ink-muted); border-style: dashed; font-family: inherit; }
+  .sched-chip.static { cursor: default; }
+  .sched-edit { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+  .sched-input {
+    width: 112px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--surface); color: var(--ink); font-size: 12px;
+  }
+
+  .add-item-form { margin-top: 8px; display: flex; gap: 6px; }
+  .add-item-form input {
+    flex: 1; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 13px;
+  }
+  .add-item-form input.sched-field { flex: none; width: 118px; }
+
+  .toast-root { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast {
+    background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 13px;
+    box-shadow: var(--shadow); animation: rise .18s ease-out;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: .001s !important; transition-duration: .001s !important; } }
+
+  @media print {
+    body { background: #fff; color: #000; }
+    .topbar { position: static; }
+    .toolbar, .name-banner, .mode-banner, .activity, .new-row-form,
+    .card-actions, .text-btn, .sched-chip-empty, .toast-root { display: none !important; }
+    .sched-chip { border-color: #999; color: #000; }
+    .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+    .card:before { background: #999 !important; }
+    .board { gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast-root" id="toast-root"></div>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script>
+  var firebaseConfig = {
+  "apiKey": "AIzaSyD4koISFljzWoC8soWJhXr3U2l5BkWkGmU",
+  "authDomain": "weekly-process-meeting.firebaseapp.com",
+  "databaseURL": "https://weekly-process-meeting-default-rtdb.firebaseio.com",
+  "projectId": "weekly-process-meeting",
+  "storageBucket": "weekly-process-meeting.firebasestorage.app",
+  "messagingSenderId": "560794646542",
+  "appId": "1:560794646542:web:1ba67910a8ac708bcf645f"
+};
+  firebase.initializeApp(firebaseConfig);
+</script>
+<script>
+(function () {
+  "use strict";
+
+  /* ================= seed / boot ================= */
+  var state = { rows: [], activity: [], archives: {}, weekOf: "", updatedAt: "" };
+  var dataLoaded = false;
+
+  var ui = {
+    myName: "",
+    filterText: "",
+    filterCategory: "all",
+    sortBy: "created",
+    sortDir: "asc",
+    newRowOpen: false,
+    editRow: {},       // id -> true while header edit form open
+    addItem: {},        // "id:list" -> true while add-item form open
+    pendingDeleteRow: {},
+    pendingDeleteItem: {},
+    editSchedule: {},   // "rowId:listKey:itemId" -> true while schedule input open
+    editItem: {},       // "rowId:listKey:itemId" -> true while item text edit form open
+    calendarOpen: false,
+    calendarMonth: null,  // { y, m } while calendar popover open
+    viewingArchive: null  // date string while browsing a saved past snapshot
+  };
+
+  var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
+
+  try {
+    ui.myName = localStorage.getItem("wpb_myname") || "";
+    var savedSort = localStorage.getItem("wpb_sort");
+    if (savedSort) {
+      var sp = JSON.parse(savedSort);
+      if (sp.sortBy) ui.sortBy = sp.sortBy;
+      if (sp.sortDir) ui.sortDir = sp.sortDir;
+    }
+    var savedUi = sessionStorage.getItem("wpb_ui_draft");
+    if (savedUi) {
+      var parsed = JSON.parse(savedUi);
+      ui.filterText = parsed.filterText || "";
+      ui.filterCategory = parsed.filterCategory || "all";
+    }
+  } catch (e) { /* storage unavailable: keep defaults */ }
+
+  var canWrite = true; // anyone with the link can edit — no login/capability gating
+  var dbRef = firebase.database().ref("board");
+
+  dbRef.on("value", function (snap) {
+    var incoming = snap.val();
+    if (incoming) {
+      state = incoming;
+      state.rows = state.rows || [];
+      state.activity = state.activity || [];
+      state.archives = state.archives || {};
+    }
+    dataLoaded = true;
+    render();
+  }, function (err) {
+    dataLoaded = true;
+    canWrite = false;
+    render();
+    toast("서버 연결에 실패했습니다: " + (err && err.message ? err.message : ""));
+  });
+
+  /* ================= helpers ================= */
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function nowIso() { return new Date().toISOString(); }
+
+  function timeAgo(iso) {
+    if (!iso) return "";
+    var diff = Date.now() - new Date(iso).getTime();
+    var m = Math.floor(diff / 60000);
+    if (m < 1) return "방금";
+    if (m < 60) return m + "분 전";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + "시간 전";
+    var d = Math.floor(h / 24);
+    if (d < 7) return d + "일 전";
+    var dt = new Date(iso);
+    return (dt.getMonth() + 1) + "/" + dt.getDate();
+  }
+
+  function rowLatestTs(row) {
+    var ts = row.updatedAt || row.createdAt || "";
+    (row.status || []).concat(row.issues || []).forEach(function (it) {
+      if (it.ts > ts) ts = it.ts;
+    });
+    return ts;
+  }
+
+  function pushActivity(text) {
+    state.activity = state.activity || [];
+    state.activity.unshift({ id: uid(), ts: nowIso(), text: text });
+    if (state.activity.length > 40) state.activity.length = 40;
+  }
+
+  function toast(msg) {
+    var root = document.getElementById("toast-root");
+    var el = document.createElement("div");
+    el.className = "toast";
+    el.textContent = msg;
+    root.appendChild(el);
+    setTimeout(function () {
+      el.remove();
+    }, 3200);
+  }
+
+  function saveUiDraft() {
+    try {
+      sessionStorage.setItem("wpb_ui_draft", JSON.stringify({
+        filterText: ui.filterText, filterCategory: ui.filterCategory
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function saveSortPref() {
+    try {
+      localStorage.setItem("wpb_sort", JSON.stringify({ sortBy: ui.sortBy, sortDir: ui.sortDir }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function whoAmI() { return (ui.myName || "익명").trim() || "익명"; }
+
+  function fmtDate(d) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+
+  function todayStr() { return fmtDate(new Date()); }
+
+  /* ================= calendar helpers ================= */
+  function parseDateStr(s) {
+    var parts = String(s || "").split("-").map(Number);
+    if (parts.length === 3 && parts.every(function (n) { return !isNaN(n); })) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date();
+  }
+
+  function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+  function firstWeekday(y, m) { return new Date(y, m, 1).getDay(); }
+
+  /* ================= mutation / sync pipeline ================= */
+  function commit(mutateFn) {
+    var prev = JSON.parse(JSON.stringify(state));
+    mutateFn();
+    state.updatedAt = nowIso();
+    render();
+    dbRef.set(state).catch(function (err) {
+      state = prev;
+      render();
+      toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+    });
+  }
+
+  /* ================= rendering ================= */
+  function categoryLabel(c) {
+    if (c === "safety") return "안전관리";
+    if (c === "noncontract") return "계약외";
+    return "프로젝트";
+  }
+
+  function filteredRows(sourceRows) {
+    var q = ui.filterText.trim().toLowerCase();
+    var rows = (sourceRows || []).filter(function (r) {
+      if (ui.filterCategory !== "all" && r.category !== ui.filterCategory) return false;
+      if (!q) return true;
+      var hay = [r.jobNo, r.name, r.manager, r.qty].join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+    return sortRows(rows);
+  }
+
+  function firstLine(s) { return String(s || "").split("\n")[0]; }
+
+  function tsVal(x) {
+    var t = x ? new Date(x).getTime() : NaN;
+    return isNaN(t) ? 0 : t;
+  }
+
+  function isEmptyKey(key, row) {
+    if (key === "jobNo") return !String(row.jobNo || "").trim();
+    if (key === "manager") return !String(row.manager || "").trim();
+    return false;
+  }
+
+  function compareBy(key, a, b) {
+    switch (key) {
+      case "jobNo": {
+        var an = parseFloat(a.jobNo), bn = parseFloat(b.jobNo);
+        if (!isNaN(an) && !isNaN(bn)) return an - bn;
+        return String(a.jobNo || "").localeCompare(String(b.jobNo || ""), "ko");
+      }
+      case "manager":
+        return String(a.manager || "").localeCompare(String(b.manager || ""), "ko");
+      case "name":
+        return firstLine(a.name).localeCompare(firstLine(b.name), "ko");
+      case "updated":
+        return tsVal(rowLatestTs(a)) - tsVal(rowLatestTs(b));
+      case "created":
+      default:
+        return tsVal(a.createdAt) - tsVal(b.createdAt);
+    }
+  }
+
+  var CATEGORY_ORDER = { project: 0, noncontract: 1, safety: 2 };
+  function categoryRank(cat) {
+    return Object.prototype.hasOwnProperty.call(CATEGORY_ORDER, cat) ? CATEGORY_ORDER[cat] : 3;
+  }
+
+  function sortRows(rows) {
+    var dir = ui.sortDir === "desc" ? -1 : 1;
+    var key = ui.sortBy;
+    var withIndex = rows.map(function (r, i) { return { r: r, i: i }; });
+    withIndex.sort(function (a, b) {
+      // when viewing "전체", always group by category first: 프로젝트 -> 계약외 -> 안전관리
+      var catCmp = categoryRank(a.r.category) - categoryRank(b.r.category);
+      if (catCmp !== 0) return catCmp;
+      var aEmpty = isEmptyKey(key, a.r), bEmpty = isEmptyKey(key, b.r);
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1; // rows missing the sort field always sink, regardless of direction
+      var cmp = compareBy(key, a.r, b.r) * dir;
+      return cmp !== 0 ? cmp : a.i - b.i; // stable: fall back to original order
+    });
+    return withIndex.map(function (x) { return x.r; });
+  }
+
+  function renderStat(rows) {
+    var issueCount = rows.reduce(function (n, r) { return n + (r.issues || []).length; }, 0);
+    var noncontractCount = rows.filter(function (r) { return r.category === "noncontract"; }).length;
+    var safetyCount = rows.filter(function (r) { return r.category === "safety"; }).length;
+    return (
+      '<div class="stat"><b class="num">' + rows.length + '</b><span>총항목</span></div>' +
+      '<div class="stat"><b class="num">' + issueCount + '</b><span>문제점</span></div>' +
+      '<div class="stat"><b class="num">' + noncontractCount + '</b><span>계약외</span></div>' +
+      '<div class="stat"><b class="num">' + safetyCount + '</b><span>안전관리</span></div>'
+    );
+  }
+
+  function renderActivity() {
+    var weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    var items = (state.activity || []).filter(function (a) { return tsVal(a.ts) >= weekAgo; });
+    if (!items.length) return "";
+    var lis = items.map(function (a) {
+      return '<li><span class="t num">' + timeAgo(a.ts) + '</span><span>' + escapeHtml(a.text) + '</span></li>';
+    }).join("");
+    return (
+      '<details class="activity"><summary>최근 1주일 활동 ' + items.length + '건</summary>' +
+      '<div class="activity-scroll"><ul class="activity-list">' + lis + '</ul></div></details>'
+    );
+  }
+
+  function renderNewRowForm() {
+    if (!ui.newRowOpen) return "";
+    return (
+      '<div class="new-row-form">' +
+        '<div class="grid-fields">' +
+          field("Job No", '<input id="nr-jobno" placeholder="예: 2650">') +
+          field("수량", '<input id="nr-qty" placeholder="예: 1 LOT">') +
+          field("담당자", '<input id="nr-manager" placeholder="담당자 이름" value="' + escapeHtml(whoAmI()) + '">') +
+          field("PO Del.", '<input id="nr-podel" placeholder="예: 2026-09-30">') +
+        '</div>' +
+        field("프로젝트명 / 안건명", '<textarea id="nr-name" placeholder="예: OO케미칼 반응기 제작 공사"></textarea>') +
+        '<div class="radio-row">' +
+          '<label><input type="radio" name="nr-cat" value="project" checked> 프로젝트</label>' +
+          '<label><input type="radio" name="nr-cat" value="noncontract"> 계약외</label>' +
+          '<label><input type="radio" name="nr-cat" value="safety"> 안전관리</label>' +
+        '</div>' +
+        '<div class="form-actions">' +
+          '<button class="ghost-btn" data-action="new-row-cancel" type="button">취소</button>' +
+          '<button class="primary-btn" data-action="new-row-submit" type="button">추가</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function field(label, inputHtml) {
+    return '<div class="field"><label>' + escapeHtml(label) + '</label>' + inputHtml + '</div>';
+  }
+
+  function renderCard(row) {
+    var isSafety = row.category === "safety";
+    var isNoncontract = row.category === "noncontract";
+    var editing = !!ui.editRow[row.id];
+    var pendingDel = !!ui.pendingDeleteRow[row.id];
+
+    var head;
+    if (editing) {
+      head =
+        '<div class="edit-fields">' +
+          field("Job No", '<input id="er-jobno-' + row.id + '" value="' + escapeHtml(row.jobNo) + '">') +
+          field("수량", '<input id="er-qty-' + row.id + '" value="' + escapeHtml(row.qty) + '">') +
+          field("담당자", '<input id="er-manager-' + row.id + '" value="' + escapeHtml(row.manager) + '">') +
+          field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(row.poDel) + '">') +
+        '</div>' +
+        field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
+        '<div class="form-actions">' +
+          '<button class="ghost-btn" data-action="edit-row-cancel" data-id="' + row.id + '" type="button">취소</button>' +
+          '<button class="primary-btn" data-action="edit-row-save" data-id="' + row.id + '" type="button">저장</button>' +
+        '</div>';
+    } else {
+      head =
+        '<div class="card-head-top">' +
+          '<div>' +
+            '<div class="card-title-row">' +
+              '<span class="badge">' + categoryLabel(row.category) + '</span>' +
+              (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
+              ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
+            '</div>' +
+            '<div class="card-title">' + escapeHtml(row.name) + '</div>' +
+          '</div>' +
+          '<div class="card-actions">' +
+            (canWriteNow ? (
+              '<button class="icon-btn" title="수정" data-action="edit-row-toggle" data-id="' + row.id + '">✎</button>' +
+              (pendingDel
+                ? '<button class="danger-confirm" data-action="delete-row-confirm" data-id="' + row.id + '">삭제 확정</button><button class="icon-btn" title="취소" data-action="delete-row-cancel" data-id="' + row.id + '">↩</button>'
+                : '<button class="icon-btn" title="삭제" data-action="delete-row" data-id="' + row.id + '">✕</button>')
+            ) : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="meta-row">' +
+          '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
+          '<span>담당자 <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
+          '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
+        '</div>' +
+        '<div class="updated-at">최근 변경 ' + timeAgo(rowLatestTs(row)) + '</div>';
+    }
+
+    return (
+      '<div class="card' + (isSafety ? ' safety' : '') + (isNoncontract ? ' noncontract' : '') + '" data-row-card="' + row.id + '">' +
+        '<div class="card-head">' + head + '</div>' +
+        '<div class="card-body">' +
+          renderPanel(row, "status", "업무현황 (현재진행중)") +
+          renderPanel(row, "issues", "문제점 및 대책") +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderScheduleBlock(row, listKey, it) {
+    var key = row.id + ":" + listKey + ":" + it.id;
+    var inputId = "sched-" + row.id + "-" + listKey + "-" + it.id;
+    if (canWriteNow && ui.editSchedule[key]) {
+      return (
+        '<span class="sched-edit">' +
+          '<input class="sched-input num" id="' + inputId + '" value="' + escapeHtml(it.schedule || "") + '" placeholder="예: 08/25~08/31">' +
+          '<button class="icon-btn" data-action="save-schedule" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="저장">✓</button>' +
+        '</span>'
+      );
+    }
+    if (it.schedule) {
+      return canWriteNow
+        ? '<button class="sched-chip num" data-action="edit-schedule-toggle" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="일정 수정">' + escapeHtml(it.schedule) + '</button>'
+        : '<span class="sched-chip static num">' + escapeHtml(it.schedule) + '</span>';
+    }
+    return canWriteNow
+      ? '<button class="sched-chip sched-chip-empty" data-action="edit-schedule-toggle" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">+ 일정</button>'
+      : "";
+  }
+
+  function renderPanel(row, listKey, title) {
+    var items = row[listKey] || [];
+    var addKey = row.id + ":" + listKey;
+    var addOpen = !!ui.addItem[addKey];
+    var withSchedule = listKey === "status";
+    var editableText = true;
+
+    var lis = items.map(function (it) {
+      var pendingKey = row.id + ":" + listKey + ":" + it.id;
+      var pending = !!ui.pendingDeleteItem[pendingKey];
+      var editKey = row.id + ":" + listKey + ":" + it.id;
+      var editingItem = editableText && canWriteNow && !!ui.editItem[editKey];
+
+      if (editingItem) {
+        return (
+          '<li>' +
+            '<div class="item-edit-row">' +
+              '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(it.text) + '</textarea>' +
+            '</div>' +
+            '<div class="item-footer">' +
+              '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
+              '<span class="item-edit-actions">' +
+                '<button class="icon-btn" data-action="save-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="저장">✓</button>' +
+                '<button class="icon-btn" data-action="cancel-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="취소">✕</button>' +
+              '</span>' +
+            '</div>' +
+          '</li>'
+        );
+      }
+
+      return (
+        '<li>' +
+          '<div class="item-row">' +
+            '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
+            (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
+          '</div>' +
+          '<div class="item-footer">' +
+            '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
+            (canWriteNow ? (
+              '<div class="item-actions">' +
+                (editableText ? '<button class="icon-btn" data-action="edit-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="수정">✎</button>' : '') +
+                (pending
+                  ? '<button class="danger-confirm" data-action="delete-item-confirm" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">확정</button>'
+                  : '<button class="icon-btn" data-action="delete-item" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">✕</button>') +
+              '</div>'
+            ) : '') +
+          '</div>' +
+        '</li>'
+      );
+    }).join("");
+
+    var addForm = "";
+    if (canWriteNow) {
+      addForm = addOpen
+        ? '<div class="add-item-form">' +
+            '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' +
+            (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)">' : "") +
+            '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
+            '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
+          '</div>'
+        : '<button class="text-btn" data-action="add-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '">+ 항목 추가</button>';
+    }
+
+    return (
+      '<div class="panel">' +
+        '<h4>' + title + '</h4>' +
+        '<ul class="item-list' + (listKey === "issues" ? " issues" : "") + '">' + lis + '</ul>' +
+        (!items.length ? '<div class="empty-hint">등록된 항목이 없습니다.</div>' : "") +
+        addForm +
+      '</div>'
+    );
+  }
+
+  function render() {
+    var archive = ui.viewingArchive ? (state.archives || {})[ui.viewingArchive] : null;
+    var sourceRows = archive ? (archive.rows || []) : (state.rows || []);
+    canWriteNow = canWrite && !archive && dataLoaded;
+    var rows = filteredRows(sourceRows);
+    var html =
+      '<div class="topbar">' +
+        '<div class="topbar-row">' +
+          '<div class="brand">' +
+            '<h1>주간공정회의록</h1>' +
+            '<span class="sub">' +
+              (archive
+                ? '지난 기록 <b class="num">' + escapeHtml(ui.viewingArchive) + '</b> 저장 '
+                : '기준일 <b class="num">' + escapeHtml(todayStr()) + '</b> ') +
+              '<span class="cal-anchor">' +
+                '<button class="chip-btn" type="button" data-action="toggle-calendar" title="달력에서 날짜 선택">📅</button>' +
+                renderCalendarPopover() +
+              '</span> ' +
+              (!archive ? '<button class="chip-btn" type="button" data-action="save-snapshot" title="현재 화면을 오늘 날짜로 저장">💾 저장</button>' : "") +
+            '</span>' +
+          '</div>' +
+          '<div class="identity-group">' +
+            '<div class="identity">' +
+              (ui.myName
+                ? '이름: <span class="who">' + escapeHtml(ui.myName) + '</span> <button class="chip-btn" data-action="change-name">변경</button>'
+                : '<button class="chip-btn" data-action="change-name">이름 설정</button>') +
+            '</div>' +
+            '<div class="stat-group">' + renderStat(rows) + '</div>' +
+          '</div>' +
+        '</div>' +
+        (!ui.myName ? renderNameBanner() : "") +
+        (!dataLoaded ? '<div class="mode-banner">서버에 연결하는 중입니다...</div>' : "") +
+        (dataLoaded && !canWrite ? '<div class="mode-banner">서버 연결에 실패했습니다. 새로고침 해 주세요.</div>' : "") +
+        (archive ? '<div class="archive-banner">📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장) <button class="chip-btn" type="button" data-action="exit-archive-view">현재로 돌아가기</button></div>' : "") +
+      '</div>' +
+      '<div class="toolbar">' +
+        '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 담당자 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
+        '<div class="tabs">' +
+          tab("all", "전체") + tab("project", "프로젝트") + tab("noncontract", "계약외") + tab("safety", "안전관리") +
+        '</div>' +
+        renderSortbar() +
+        (canWriteNow ? '<button class="primary-btn" data-action="new-row-toggle">+ 새 항목</button>' : "") +
+      '</div>' +
+      renderActivity() +
+      (canWriteNow ? renderNewRowForm() : "") +
+      '<div class="board">' +
+        (rows.length ? rows.map(renderCard).join("") : '<div class="empty-hint">조건에 맞는 항목이 없습니다.</div>') +
+      '</div>';
+
+    document.getElementById("app").innerHTML = html;
+  }
+
+  function renderCalendarPopover() {
+    if (!ui.calendarOpen || !ui.calendarMonth) return "";
+    var y = ui.calendarMonth.y, m = ui.calendarMonth.m;
+    var total = daysInMonth(y, m);
+    var startWeekday = firstWeekday(y, m);
+    var todayVal = todayStr();
+    var cells = "";
+    for (var i = 0; i < startWeekday; i++) cells += '<div class="cal-cell cal-empty"></div>';
+    for (var d = 1; d <= total; d++) {
+      var dateStr = fmtDate(new Date(y, m, d));
+      var hasArchive = !!(state.archives && state.archives[dateStr]);
+      var isToday = dateStr === todayVal;
+      var isSelected = dateStr === (ui.viewingArchive || todayVal);
+      var title = hasArchive ? dateStr + ' 저장된 기록 보기' : dateStr + ' (저장된 기록 없음)';
+      cells += '<button type="button" class="cal-cell' + (isToday ? ' cal-today' : '') + (isSelected ? ' cal-selected' : '') + (hasArchive ? ' cal-has-archive' : '') + '" data-action="cal-pick-day" data-date="' + dateStr + '" title="' + title + '">' +
+        d + (hasArchive ? '<span class="cal-dot"></span>' : '') +
+      '</button>';
+    }
+    return (
+      '<div class="cal-popover">' +
+        '<div class="cal-header">' +
+          '<button type="button" class="icon-btn" data-action="cal-prev-month">◀</button>' +
+          '<span class="cal-month-label">' + y + '년 ' + (m + 1) + '월</span>' +
+          '<button type="button" class="icon-btn" data-action="cal-next-month">▶</button>' +
+        '</div>' +
+        '<div class="cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>' +
+        '<div class="cal-grid">' + cells + '</div>' +
+        '<div class="cal-footer"><span class="cal-legend-selected"></span> 현재 기준일 · <span class="cal-dot"></span> 저장된 기록 (클릭하면 조회)</div>' +
+      '</div>'
+    );
+  }
+
+  function tab(value, label) {
+    return '<button class="tab" role="button" aria-pressed="' + (ui.filterCategory === value) + '" data-action="set-filter-cat" data-value="' + value + '">' + label + '</button>';
+  }
+
+  var SORT_OPTIONS = [
+    ["created", "등록순"],
+    ["updated", "최근 변경순"],
+    ["jobNo", "Job No순"],
+    ["manager", "담당자순"],
+    ["name", "이름순"]
+  ];
+
+  function renderSortbar() {
+    var options = SORT_OPTIONS.map(function (o) {
+      return '<option value="' + o[0] + '"' + (ui.sortBy === o[0] ? " selected" : "") + '>' + escapeHtml(o[1]) + '</option>';
+    }).join("");
+    return (
+      '<div class="sortbar">' +
+        '<label class="sort-label" for="sort-select">정렬</label>' +
+        '<select id="sort-select">' + options + '</select>' +
+        '<button class="ghost-btn sort-dir-btn" type="button" data-action="toggle-sort-dir" title="정렬 방향 전환" aria-label="정렬 방향 전환">' +
+          (ui.sortDir === "desc" ? "▼" : "▲") +
+        '</button>' +
+      '</div>'
+    );
+  }
+
+  function renderNameBanner() {
+    return (
+      '<div class="name-banner">' +
+        '<span>회신/수정 이력에 표시할 이름을 입력해 주세요.</span>' +
+        '<input id="name-input" placeholder="예: 홍길동" maxlength="20">' +
+        '<button class="primary-btn" data-action="save-name" type="button">저장</button>' +
+      '</div>'
+    );
+  }
+
+  /* ================= event delegation ================= */
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-action]");
+    if (!el) return;
+    var action = el.getAttribute("data-action");
+    var id = el.getAttribute("data-id");
+    var list = el.getAttribute("data-list");
+    var itemId = el.getAttribute("data-item");
+
+    switch (action) {
+      case "change-name": {
+        ui.myName = "";
+        render();
+        var inp = document.getElementById("name-input");
+        if (inp) inp.focus();
+        break;
+      }
+      case "save-name": {
+        var val = (document.getElementById("name-input") || {}).value || "";
+        val = val.trim();
+        if (!val) { toast("이름을 입력해 주세요."); return; }
+        ui.myName = val;
+        try { localStorage.setItem("wpb_myname", val); } catch (e) {}
+        render();
+        break;
+      }
+      case "set-filter-cat":
+        ui.filterCategory = el.getAttribute("data-value");
+        saveUiDraft();
+        render();
+        break;
+      case "toggle-sort-dir":
+        ui.sortDir = ui.sortDir === "desc" ? "asc" : "desc";
+        saveSortPref();
+        render();
+        break;
+      case "toggle-calendar": {
+        ui.calendarOpen = !ui.calendarOpen;
+        if (ui.calendarOpen) {
+          var baseDate = parseDateStr(ui.viewingArchive || todayStr());
+          ui.calendarMonth = { y: baseDate.getFullYear(), m: baseDate.getMonth() };
+        }
+        render();
+        break;
+      }
+      case "cal-prev-month": {
+        ui.calendarMonth.m -= 1;
+        if (ui.calendarMonth.m < 0) { ui.calendarMonth.m = 11; ui.calendarMonth.y -= 1; }
+        render();
+        break;
+      }
+      case "cal-next-month": {
+        ui.calendarMonth.m += 1;
+        if (ui.calendarMonth.m > 11) { ui.calendarMonth.m = 0; ui.calendarMonth.y += 1; }
+        render();
+        break;
+      }
+      case "cal-pick-day": {
+        var pickedDate = el.getAttribute("data-date");
+        ui.calendarOpen = false;
+        if (state.archives && state.archives[pickedDate]) {
+          ui.viewingArchive = pickedDate;
+          render();
+        } else {
+          render();
+          toast(pickedDate + "에는 저장된 기록이 없습니다.");
+        }
+        break;
+      }
+      case "save-snapshot": {
+        var snapDate = todayStr();
+        var existed = !!(state.archives && state.archives[snapDate]);
+        commit(function () {
+          state.archives = state.archives || {};
+          state.archives[snapDate] = {
+            rows: JSON.parse(JSON.stringify(state.rows)),
+            savedAt: nowIso(),
+            savedBy: whoAmI()
+          };
+          pushActivity(whoAmI() + "님이 " + snapDate + " 날짜로 주간공정회의록을 저장했습니다.");
+        });
+        toast((existed ? snapDate + " 날짜 기록을 최신 내용으로 덮어썼습니다." : snapDate + " 날짜로 저장되었습니다."));
+        break;
+      }
+      case "exit-archive-view": {
+        ui.viewingArchive = null;
+        render();
+        break;
+      }
+      case "new-row-toggle":
+        ui.newRowOpen = !ui.newRowOpen;
+        render();
+        break;
+      case "new-row-cancel":
+        ui.newRowOpen = false;
+        render();
+        break;
+      case "new-row-submit": {
+        var name = (document.getElementById("nr-name") || {}).value || "";
+        if (!name.trim()) { toast("프로젝트명을 입력해 주세요."); return; }
+        var cat = (document.querySelector('input[name="nr-cat"]:checked') || {}).value || "project";
+        var row = {
+          id: uid(),
+          category: cat,
+          jobNo: (document.getElementById("nr-jobno") || {}).value || "",
+          name: name.trim(),
+          qty: (document.getElementById("nr-qty") || {}).value || "",
+          manager: (document.getElementById("nr-manager") || {}).value || "",
+          poDel: (document.getElementById("nr-podel") || {}).value || "",
+          status: [], issues: [],
+          createdAt: nowIso(), updatedAt: nowIso()
+        };
+        ui.newRowOpen = false;
+        commit(function () {
+          state.rows.push(row);
+          pushActivity(whoAmI() + "님이 '" + row.name.split("\n")[0] + "' 항목을 추가했습니다.");
+        });
+        break;
+      }
+      case "edit-row-toggle":
+        ui.editRow[id] = !ui.editRow[id];
+        render();
+        break;
+      case "edit-row-cancel":
+        ui.editRow[id] = false;
+        render();
+        break;
+      case "edit-row-save": {
+        var g = function (f) { return (document.getElementById("er-" + f + "-" + id) || {}).value || ""; };
+        var patch = {
+          jobNo: g("jobno"), qty: g("qty"), manager: g("manager"),
+          poDel: g("podel"),
+          name: g("name")
+        };
+        ui.editRow[id] = false;
+        commit(function () {
+          var r = state.rows.find(function (x) { return x.id === id; });
+          if (!r) return;
+          Object.assign(r, patch);
+          r.updatedAt = nowIso();
+          pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "' 정보를 수정했습니다.");
+        });
+        break;
+      }
+      case "delete-row":
+        ui.pendingDeleteRow[id] = true;
+        render();
+        setTimeout(function () { if (ui.pendingDeleteRow[id]) { ui.pendingDeleteRow[id] = false; render(); } }, 4000);
+        break;
+      case "delete-row-cancel":
+        ui.pendingDeleteRow[id] = false;
+        render();
+        break;
+      case "delete-row-confirm": {
+        var target = (state.rows || []).find(function (x) { return x.id === id; });
+        var label = target ? target.name.split("\n")[0] : "항목";
+        commit(function () {
+          state.rows = state.rows.filter(function (x) { return x.id !== id; });
+          pushActivity(whoAmI() + "님이 '" + label + "' 항목을 삭제했습니다.");
+        });
+        break;
+      }
+      case "add-item-toggle":
+        ui.addItem[id + ":" + list] = !ui.addItem[id + ":" + list];
+        render();
+        var target2 = document.getElementById("ai-" + id + "-" + list);
+        if (target2) target2.focus();
+        break;
+      case "add-item-cancel":
+        ui.addItem[id + ":" + list] = false;
+        render();
+        break;
+      case "add-item-submit":
+        submitItem(id, list);
+        break;
+      case "delete-item":
+        ui.pendingDeleteItem[id + ":" + list + ":" + itemId] = true;
+        render();
+        setTimeout(function () {
+          var k = id + ":" + list + ":" + itemId;
+          if (ui.pendingDeleteItem[k]) { ui.pendingDeleteItem[k] = false; render(); }
+        }, 4000);
+        break;
+      case "delete-item-confirm": {
+        commit(function () {
+          var r = state.rows.find(function (x) { return x.id === id; });
+          if (!r) return;
+          r[list] = (r[list] || []).filter(function (x) { return x.id !== itemId; });
+          r.updatedAt = nowIso();
+          pushActivity(whoAmI() + "님이 항목을 삭제했습니다.");
+        });
+        break;
+      }
+      case "edit-schedule-toggle": {
+        var schedKey = id + ":" + list + ":" + itemId;
+        ui.editSchedule[schedKey] = !ui.editSchedule[schedKey];
+        render();
+        var schedInputEl = document.getElementById("sched-" + id + "-" + list + "-" + itemId);
+        if (schedInputEl) { schedInputEl.focus(); schedInputEl.select(); }
+        break;
+      }
+      case "save-schedule":
+        saveSchedule(id, list, itemId);
+        break;
+      case "edit-item-toggle": {
+        var editItemKey = id + ":" + list + ":" + itemId;
+        ui.editItem[editItemKey] = true;
+        render();
+        var ta = document.getElementById("edit-item-" + id + "-" + list + "-" + itemId);
+        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+        break;
+      }
+      case "cancel-item-edit": {
+        ui.editItem[id + ":" + list + ":" + itemId] = false;
+        render();
+        break;
+      }
+      case "save-item-edit": {
+        var editTa = document.getElementById("edit-item-" + id + "-" + list + "-" + itemId);
+        var newText = editTa ? editTa.value.trim() : "";
+        if (!newText) { toast("내용을 입력해 주세요."); return; }
+        ui.editItem[id + ":" + list + ":" + itemId] = false;
+        commit(function () {
+          var r = state.rows.find(function (x) { return x.id === id; });
+          if (!r) return;
+          var it = (r[list] || []).find(function (x) { return x.id === itemId; });
+          if (!it) return;
+          it.text = newText;
+          r.updatedAt = nowIso();
+          pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 " + (list === "issues" ? "문제점" : "업무현황") + " 항목을 수정했습니다.");
+        });
+        break;
+      }
+      default: break;
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var el = e.target;
+    if (el.id && el.id.indexOf("ai-sched-") === 0) {
+      var msc = el.id.match(/^ai-sched-(.+)-(status|issues)$/);
+      if (msc) { e.preventDefault(); submitItem(msc[1], msc[2]); }
+      return;
+    }
+    if (el.id && el.id.indexOf("ai-") === 0) {
+      var m = el.id.match(/^ai-(.+)-(status|issues)$/);
+      if (m) { e.preventDefault(); submitItem(m[1], m[2]); }
+    }
+    if (el.id && el.id.indexOf("sched-") === 0) {
+      var m2 = el.id.match(/^sched-(.+)-(status|issues)-(.+)$/);
+      if (m2) { e.preventDefault(); saveSchedule(m2[1], m2[2], m2[3]); }
+    }
+    if (el.id === "name-input") {
+      e.preventDefault();
+      document.querySelector('[data-action="save-name"]').click();
+    }
+  });
+
+  document.addEventListener("input", function (e) {
+    if (e.target.id === "search-input") {
+      ui.filterText = e.target.value;
+      saveUiDraft();
+      var caret = e.target.selectionStart;
+      render();
+      var again = document.getElementById("search-input");
+      if (again) { again.focus(); again.setSelectionRange(caret, caret); }
+    }
+  });
+
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "sort-select") {
+      ui.sortBy = e.target.value;
+      saveSortPref();
+      render();
+      return;
+    }
+  });
+
+  function saveSchedule(rowId, listKey, itemId) {
+    var input = document.getElementById("sched-" + rowId + "-" + listKey + "-" + itemId);
+    var value = input ? input.value.trim() : "";
+    ui.editSchedule[rowId + ":" + listKey + ":" + itemId] = false;
+    commit(function () {
+      var r = state.rows.find(function (x) { return x.id === rowId; });
+      if (!r) return;
+      var it = (r[listKey] || []).find(function (x) { return x.id === itemId; });
+      if (!it) return;
+      it.schedule = value;
+      r.updatedAt = nowIso();
+      pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 일정을 " + (value || "(비움)") + "(으)로 입력했습니다.");
+    });
+  }
+
+  function submitItem(rowId, listKey) {
+    var input = document.getElementById("ai-" + rowId + "-" + listKey);
+    var text = input ? input.value.trim() : "";
+    if (!text) { toast("내용을 입력해 주세요."); return; }
+    var item = { id: uid(), author: whoAmI(), text: text, ts: nowIso() };
+    if (listKey === "status") {
+      var schedInput = document.getElementById("ai-sched-" + rowId + "-" + listKey);
+      item.schedule = schedInput ? schedInput.value.trim() : "";
+    }
+    ui.addItem[rowId + ":" + listKey] = false;
+    commit(function () {
+      var r = state.rows.find(function (x) { return x.id === rowId; });
+      if (!r) return;
+      r[listKey] = r[listKey] || [];
+      r[listKey].push(item);
+      r.updatedAt = nowIso();
+      pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'에 " + (listKey === "issues" ? "문제점" : "업무현황") + "을 추가했습니다.");
+    });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
