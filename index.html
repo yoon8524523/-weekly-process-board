@@ -1204,15 +1204,32 @@
     }
   });
 
+  // Re-rendering on every keystroke destroys and recreates the search input's DOM node,
+  // which breaks Korean IME composition (esp. the Microsoft 한글 입력기, which completes
+  // composition after every syllable block, not just at the end of the word). Debounce
+  // the re-render until typing pauses so the node is never touched mid-composition.
+  var searchDebounceTimer = null;
+  function scheduleSearchRender() {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function () {
+      searchDebounceTimer = null;
+      if (isComposing) return; // wait for the in-progress syllable; compositionend will reschedule
+      var el = document.getElementById("search-input");
+      var caret = el ? el.selectionStart : null;
+      render();
+      var again = document.getElementById("search-input");
+      if (again) {
+        again.focus();
+        if (caret != null) again.setSelectionRange(caret, caret);
+      }
+    }, 220);
+  }
+
   document.addEventListener("input", function (e) {
     if (e.target.id === "search-input") {
       ui.filterText = e.target.value;
       saveUiDraft();
-      if (isComposing) return; // render() is deferred until compositionend anyway; don't touch focus/caret mid-IME
-      var caret = e.target.selectionStart;
-      render();
-      var again = document.getElementById("search-input");
-      if (again) { again.focus(); again.setSelectionRange(caret, caret); }
+      scheduleSearchRender();
     }
   });
 
@@ -1220,10 +1237,7 @@
     if (e.target.id === "search-input") {
       ui.filterText = e.target.value;
       saveUiDraft();
-      var caret = e.target.selectionStart;
-      render();
-      var again = document.getElementById("search-input");
-      if (again) { again.focus(); again.setSelectionRange(caret, caret); }
+      scheduleSearchRender();
     }
   });
 
