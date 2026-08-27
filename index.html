@@ -550,8 +550,8 @@
     var rows = (sourceRows || []).filter(function (r) {
       if (ui.filterCategory !== "all" && r.category !== ui.filterCategory) return false;
       if (!q) return true;
-      var itemAuthors = (r.status || []).concat(r.issues || []).map(function (it) { return it.author || ""; }).join(" ");
-      var hay = [r.jobNo, r.name, r.manager, r.qty, itemAuthors].join(" ").toLowerCase();
+      var statusAuthors = (r.status || []).map(function (it) { return it.author || ""; }).join(" ");
+      var hay = [r.jobNo, r.name, r.qty, statusAuthors].join(" ").toLowerCase();
       return hay.indexOf(q) !== -1;
     });
     return sortRows(rows);
@@ -746,10 +746,10 @@
   function renderPanel(row, listKey, title) {
     var items = row[listKey] || [];
     var searchQuery = ui.filterText.trim().toLowerCase();
-    if (searchQuery) {
+    if (searchQuery && listKey === "status") {
       var authorMatched = items.filter(function (it) { return (it.author || "").toLowerCase().indexOf(searchQuery) !== -1; });
       // only narrow down to matching authors when the search actually matches someone here;
-      // otherwise this row matched on Job No / name / manager / qty, so keep showing all items
+      // otherwise this row matched on Job No / name / qty, so keep showing all items
       if (authorMatched.length) items = authorMatched;
     }
     var addKey = row.id + ":" + listKey;
