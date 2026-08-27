@@ -1195,8 +1195,25 @@
     }
   });
 
+  var searchComposing = false;
+  document.addEventListener("compositionstart", function (e) {
+    if (e.target.id === "search-input") searchComposing = true;
+  });
+  document.addEventListener("compositionend", function (e) {
+    if (e.target.id === "search-input") {
+      searchComposing = false;
+      ui.filterText = e.target.value;
+      saveUiDraft();
+      var caret = e.target.selectionStart;
+      render();
+      var again = document.getElementById("search-input");
+      if (again) { again.focus(); again.setSelectionRange(caret, caret); }
+    }
+  });
+
   document.addEventListener("input", function (e) {
     if (e.target.id === "search-input") {
+      if (searchComposing) return; // let the browser finish IME composition before re-rendering
       ui.filterText = e.target.value;
       saveUiDraft();
       var caret = e.target.selectionStart;
