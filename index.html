@@ -550,7 +550,8 @@
     var rows = (sourceRows || []).filter(function (r) {
       if (ui.filterCategory !== "all" && r.category !== ui.filterCategory) return false;
       if (!q) return true;
-      var hay = [r.jobNo, r.name, r.manager, r.qty].join(" ").toLowerCase();
+      var itemAuthors = (r.status || []).concat(r.issues || []).map(function (it) { return it.author || ""; }).join(" ");
+      var hay = [r.jobNo, r.name, r.manager, r.qty, itemAuthors].join(" ").toLowerCase();
       return hay.indexOf(q) !== -1;
     });
     return sortRows(rows);
