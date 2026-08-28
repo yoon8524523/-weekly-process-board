@@ -972,6 +972,19 @@
       if (targetListKey === "status") {
         var statusIdx = (r.status || []).findIndex(function (x) { return x.id === targetItemId; });
         if (statusIdx === -1) return;
+        // make room only for the item actually occupying the target slot (and, if pushing it
+        // down lands it on yet another occupied slot, keep cascading) — items that already sit
+        // further down with a gap in between are left alone, so unrelated placements don't move
+        var others = issues
+          .map(function (it, idx) { return { it: it, slot: issueEffectiveSlot(it, idx) }; })
+          .filter(function (e) { return e.it !== dragged && e.slot >= statusIdx; })
+          .sort(function (a, b) { return a.slot - b.slot; });
+        var cursor = statusIdx;
+        for (var oi = 0; oi < others.length; oi++) {
+          if (others[oi].slot !== cursor) break; // gap found; nothing further needs to move
+          others[oi].it.rowSlot = cursor + 1;
+          cursor += 1;
+        }
         dragged.rowSlot = statusIdx;
       } else if (targetListKey === "issues") {
         var targetIdx = issues.findIndex(function (x) { return x.id === targetItemId; });
