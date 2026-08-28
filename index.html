@@ -272,6 +272,8 @@
   }
   .card.safety .badge { background: var(--warn-soft); color: var(--warn); }
   .card.noncontract .badge { background: var(--surface-2); color: var(--ink-muted); }
+  .badge-btn { border: none; font-family: inherit; cursor: pointer; }
+  .badge-btn:hover { filter: brightness(0.94); }
   .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
   .card-title { font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
   .issue-flag {
@@ -746,7 +748,9 @@
         '<div class="card-head-top">' +
           '<div>' +
             '<div class="card-title-row">' +
-              '<span class="badge">' + categoryLabel(row.category) + '</span>' +
+              (canWriteNow
+                ? '<button type="button" class="badge badge-btn" data-action="cycle-category" data-id="' + row.id + '" title="클릭하면 분류가 바뀝니다 (프로젝트 → 계약외 → 안전관리)">' + categoryLabel(row.category) + '</button>'
+                : '<span class="badge">' + categoryLabel(row.category) + '</span>') +
               (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
               ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
             '</div>' +
@@ -1308,6 +1312,18 @@
           Object.assign(r, patch);
           r.updatedAt = nowIso();
           pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "' 정보를 수정했습니다.");
+        });
+        break;
+      }
+      case "cycle-category": {
+        var CATEGORY_CYCLE = ["project", "noncontract", "safety"];
+        commit(function () {
+          var r = state.rows.find(function (x) { return x.id === id; });
+          if (!r) return;
+          var curIdx = CATEGORY_CYCLE.indexOf(r.category);
+          r.category = CATEGORY_CYCLE[(curIdx + 1) % CATEGORY_CYCLE.length];
+          r.updatedAt = nowIso();
+          pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 분류를 " + categoryLabel(r.category) + "(으)로 변경했습니다.");
         });
         break;
       }
