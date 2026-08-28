@@ -285,21 +285,28 @@
 
   .edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
 
-  .card-body { display: grid; grid-template-columns: 6fr 4fr; }
-  @media (max-width: 760px) { .card-body { grid-template-columns: 1fr; } }
-  .panel { padding: 12px 16px 14px 20px; }
-  .panel + .panel { border-left: 1px solid var(--line); }
-  @media (max-width: 760px) { .panel + .panel { border-left: none; border-top: 1px solid var(--line); } }
-  .panel h4 {
-    margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-    color: var(--ink-muted); font-weight: 700; display: flex; justify-content: space-between; align-items: center;
+  .card-body {
+    display: grid; grid-template-columns: 6fr 4fr; column-gap: 16px; row-gap: 7px;
+    align-items: start; padding: 12px 16px 14px 20px;
   }
-  .item-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-  .item-list li {
+  .gc1 { border-right: 1px solid var(--line); padding-right: 14px; }
+  .gc2 { padding-left: 2px; }
+  @media (max-width: 760px) {
+    .card-body { grid-template-columns: 1fr; }
+    .card-body > * { grid-column: 1 !important; grid-row: auto !important; }
+    .gc1 { border-right: none; padding-right: 0; }
+    .gc1.col-head { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; }
+    .gc2 { padding-left: 0; }
+  }
+  .col-head {
+    margin: 0 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--ink-muted); font-weight: 700;
+  }
+  .item-cell {
     display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; background: var(--surface-2);
-    border-radius: 8px; font-size: 13px;
+    border-radius: 8px; font-size: 13px; min-width: 0;
   }
-  .item-list.issues li { background: var(--danger-soft); }
+  .item-cell.issues { background: var(--danger-soft); }
   .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .item-text { flex: 1; white-space: pre-line; }
   .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -312,7 +319,8 @@
     user-select: none; font-size: 14px; line-height: 1.5; padding: 0 2px 0 0;
   }
   .drag-handle:active { cursor: grabbing; }
-  .item-list li.item-dragging { opacity: 0.45; background: var(--accent-soft); }
+  .item-cell.item-dragging { opacity: 0.45; background: var(--accent-soft); }
+  .item-cell.drag-target-highlight { box-shadow: inset 0 0 0 2px var(--accent); }
 
   .item-edit-row { margin-bottom: 4px; }
   .item-edit-input {
@@ -764,10 +772,7 @@
     return (
       '<div class="card' + (isSafety ? ' safety' : '') + (isNoncontract ? ' noncontract' : '') + '" data-row-card="' + row.id + '">' +
         '<div class="card-head">' + head + '</div>' +
-        '<div class="card-body">' +
-          renderPanel(row, "status", "업무현황 (현재진행중)") +
-          renderPanel(row, "issues", "문제점 및 대책") +
-        '</div>' +
+        renderCardBody(row) +
       '</div>'
     );
   }
@@ -793,137 +798,206 @@
       : "";
   }
 
-  function renderPanel(row, listKey, title) {
-    var items = row[listKey] || [];
-    var searchQuery = ui.filterText.trim().toLowerCase();
-    if (searchQuery && listKey === "status") {
-      var authorMatched = items.filter(function (it) { return (it.author || "").toLowerCase().indexOf(searchQuery) !== -1; });
-      // only narrow down to matching authors when the search actually matches someone here;
-      // otherwise this row matched on Job No / name / qty, so keep showing all items
-      if (authorMatched.length) items = authorMatched;
-    }
-    var addKey = row.id + ":" + listKey;
-    var addOpen = !!ui.addItem[addKey];
+  // 문제점 항목의 표시 위치(업무현황의 몇 번째 줄과 나란히 놓일지). 지정 안 하면 배열 순서를 그대로 씀.
+  function issueEffectiveSlot(it, idx) {
+    return (it && it.rowSlot != null) ? it.rowSlot : idx;
+  }
+
+  function renderItemCell(row, listKey, it, idx, gridColumn, gridRow, dragEnabled) {
+    var colClass = gridColumn === 1 ? " gc1" : " gc2";
+    var styleAttr = ' style="grid-column:' + gridColumn + ';grid-row:' + gridRow + '"';
+    var dataAttrs = ' data-item-id="' + it.id + '" data-row-id="' + row.id + '" data-list-key="' + listKey + '" data-index="' + idx + '"';
+    var pendingKey = row.id + ":" + listKey + ":" + it.id;
+    var pending = !!ui.pendingDeleteItem[pendingKey];
+    var editKey = row.id + ":" + listKey + ":" + it.id;
+    var editingItem = canWriteNow && !!ui.editItem[editKey];
     var withSchedule = listKey === "status";
-    var editableText = true;
-    var dragEnabled = listKey === "status" && canWriteNow && !searchQuery && items.length > 1;
 
-    var lis = items.map(function (it) {
-      var pendingKey = row.id + ":" + listKey + ":" + it.id;
-      var pending = !!ui.pendingDeleteItem[pendingKey];
-      var editKey = row.id + ":" + listKey + ":" + it.id;
-      var editingItem = editableText && canWriteNow && !!ui.editItem[editKey];
-
-      if (editingItem) {
-        return (
-          '<li data-item-id="' + it.id + '">' +
-            '<div class="item-edit-row">' +
-              '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(it.text) + '</textarea>' +
-            '</div>' +
-            '<div class="item-footer">' +
-              '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
-              '<span class="item-edit-actions">' +
-                '<button class="icon-btn" data-action="save-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="저장">✓</button>' +
-                '<button class="icon-btn" data-action="cancel-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="취소">✕</button>' +
-              '</span>' +
-            '</div>' +
-          '</li>'
-        );
-      }
-
+    if (editingItem) {
       return (
-        '<li data-item-id="' + it.id + '">' +
-          '<div class="item-row">' +
-            (dragEnabled ? '<span class="drag-handle" title="드래그해서 순서 변경">⠿</span>' : '') +
-            '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
-            (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
+        '<div class="item-cell' + colClass + '"' + dataAttrs + styleAttr + '>' +
+          '<div class="item-edit-row">' +
+            '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(it.text) + '</textarea>' +
           '</div>' +
-          '<div class="item-footer' + (dragEnabled ? ' item-footer-indent' : '') + '">' +
+          '<div class="item-footer">' +
             '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
-            (canWriteNow ? (
-              '<div class="item-actions">' +
-                (editableText ? '<button class="icon-btn" data-action="edit-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="수정">✎</button>' : '') +
-                (pending
-                  ? '<button class="danger-confirm" data-action="delete-item-confirm" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">확정</button>'
-                  : '<button class="icon-btn" data-action="delete-item" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">✕</button>') +
-              '</div>'
-            ) : '') +
+            '<span class="item-edit-actions">' +
+              '<button class="icon-btn" data-action="save-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="저장">✓</button>' +
+              '<button class="icon-btn" data-action="cancel-item-edit" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="취소">✕</button>' +
+            '</span>' +
           '</div>' +
-        '</li>'
+        '</div>'
       );
-    }).join("");
-
-    var addForm = "";
-    if (canWriteNow) {
-      addForm = addOpen
-        ? '<div class="add-item-form">' +
-            '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' +
-            (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)">' : "") +
-            '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
-            '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
-          '</div>'
-        : '<button class="text-btn" data-action="add-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '">+ 항목 추가</button>';
     }
 
     return (
-      '<div class="panel">' +
-        '<h4>' + title + '</h4>' +
-        '<ul class="item-list' + (listKey === "issues" ? " issues" : "") + '" data-row-id="' + row.id + '" data-list-key="' + listKey + '">' + lis + '</ul>' +
-        (!items.length ? '<div class="empty-hint">등록된 항목이 없습니다.</div>' : "") +
-        addForm +
+      '<div class="item-cell' + colClass + (listKey === "issues" ? " issues" : "") + '"' + dataAttrs + styleAttr + '>' +
+        '<div class="item-row">' +
+          (dragEnabled ? '<span class="drag-handle" title="드래그해서 순서/위치 변경">⠿</span>' : '') +
+          '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
+          (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
+        '</div>' +
+        '<div class="item-footer' + (dragEnabled ? ' item-footer-indent' : '') + '">' +
+          '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
+          (canWriteNow ? (
+            '<div class="item-actions">' +
+              '<button class="icon-btn" data-action="edit-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="수정">✎</button>' +
+              (pending
+                ? '<button class="danger-confirm" data-action="delete-item-confirm" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">확정</button>'
+                : '<button class="icon-btn" data-action="delete-item" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '">✕</button>') +
+            '</div>'
+          ) : '') +
+        '</div>' +
       '</div>'
     );
   }
 
-  /* ================= drag-to-reorder (업무현황) ================= */
-  var dragState = null; // { li, ul, pointerId }
+  function renderAddForm(row, listKey, gridColumn, gridRow) {
+    if (!canWriteNow) return "";
+    var colClass = gridColumn === 1 ? " gc1" : " gc2";
+    var addKey = row.id + ":" + listKey;
+    var addOpen = !!ui.addItem[addKey];
+    var withSchedule = listKey === "status";
+    var inner = addOpen
+      ? '<div class="add-item-form">' +
+          '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' +
+          (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)">' : "") +
+          '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
+          '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
+        '</div>'
+      : '<button class="text-btn" data-action="add-item-toggle" data-id="' + row.id + '" data-list="' + listKey + '">+ 항목 추가</button>';
+    return '<div class="add-form-cell' + colClass + '" style="grid-column:' + gridColumn + ';grid-row:' + gridRow + '">' + inner + '</div>';
+  }
 
-  function reorderItems(rowId, listKey, newOrderIds) {
+  function renderCardBody(row) {
+    var statusAll = row.status || [];
+    var issuesAll = row.issues || [];
+    var searchQuery = ui.filterText.trim().toLowerCase();
+
+    var displayStatus = statusAll;
+    if (searchQuery) {
+      var authorMatched = statusAll.filter(function (it) { return (it.author || "").toLowerCase().indexOf(searchQuery) !== -1; });
+      // only narrow down to matching authors when the search actually matches someone here;
+      // otherwise this row matched on Job No / name / qty, so keep showing all items
+      if (authorMatched.length) displayStatus = authorMatched;
+    }
+    var statusFiltered = displayStatus.length !== statusAll.length;
+    var dragStatusEnabled = canWriteNow && !statusFiltered && displayStatus.length > 1;
+    var dragIssuesEnabled = canWriteNow;
+
+    var issueEntries = issuesAll.map(function (it, idx) { return { it: it, idx: idx, slot: issueEffectiveSlot(it, idx) }; });
+    issueEntries.sort(function (a, b) { return a.slot - b.slot; });
+    var maxIssueSlot = issueEntries.length ? issueEntries[issueEntries.length - 1].slot : -1;
+
+    var html = "";
+    html += '<h4 class="col-head gc1" style="grid-column:1;grid-row:1">업무현황 (현재진행중)</h4>';
+    displayStatus.forEach(function (it, idx) {
+      html += renderItemCell(row, "status", it, idx, 1, idx + 2, dragStatusEnabled);
+    });
+    if (!displayStatus.length) html += '<div class="empty-hint gc1" style="grid-column:1;grid-row:2">등록된 항목이 없습니다.</div>';
+    html += renderAddForm(row, "status", 1, displayStatus.length + 2);
+
+    html += '<h4 class="col-head gc2" style="grid-column:2;grid-row:1">문제점 및 대책</h4>';
+    issueEntries.forEach(function (entry) {
+      html += renderItemCell(row, "issues", entry.it, entry.idx, 2, entry.slot + 2, dragIssuesEnabled);
+    });
+    if (!issueEntries.length) html += '<div class="empty-hint gc2" style="grid-column:2;grid-row:2">등록된 항목이 없습니다.</div>';
+    html += renderAddForm(row, "issues", 2, maxIssueSlot + 3);
+
+    return '<div class="card-body">' + html + '</div>';
+  }
+
+  /* ================= drag-to-reorder / re-position (업무현황 · 문제점 및 대책) ================= */
+  var dragState = null; // { cell, rowId, listKey, itemId, pointerId, targetCell }
+
+  function reorderStatusItems(rowId, draggedId, targetId) {
     commit(function () {
       var r = state.rows.find(function (x) { return x.id === rowId; });
       if (!r) return;
-      var items = r[listKey] || [];
-      var byId = {};
-      items.forEach(function (it) { byId[it.id] = it; });
-      var reordered = newOrderIds.map(function (id) { return byId[id]; }).filter(Boolean);
-      items.forEach(function (it) { if (reordered.indexOf(it) === -1) reordered.push(it); }); // safety net
-      r[listKey] = reordered;
+      var items = r.status || [];
+      var draggedIdx = items.findIndex(function (x) { return x.id === draggedId; });
+      if (draggedIdx === -1) return;
+      var moved = items.splice(draggedIdx, 1)[0];
+      var targetIdx = items.findIndex(function (x) { return x.id === targetId; });
+      if (targetIdx === -1) { items.push(moved); } else { items.splice(targetIdx, 0, moved); }
+      r.status = items;
+    });
+  }
+
+  // 문제점 항목을 다른 문제점 위에 놓으면 자리를 맞바꾸고, 업무현황 항목 위에 놓으면 그 줄에 나란히 놓이도록 위치만 지정
+  function reorderIssueItem(rowId, draggedId, targetListKey, targetItemId) {
+    commit(function () {
+      var r = state.rows.find(function (x) { return x.id === rowId; });
+      if (!r) return;
+      var issues = r.issues || [];
+      var draggedIdx = issues.findIndex(function (x) { return x.id === draggedId; });
+      if (draggedIdx === -1) return;
+      var dragged = issues[draggedIdx];
+      if (targetListKey === "status") {
+        var statusIdx = (r.status || []).findIndex(function (x) { return x.id === targetItemId; });
+        if (statusIdx === -1) return;
+        dragged.rowSlot = statusIdx;
+      } else if (targetListKey === "issues") {
+        var targetIdx = issues.findIndex(function (x) { return x.id === targetItemId; });
+        if (targetIdx === -1 || targetIdx === draggedIdx) return;
+        var target = issues[targetIdx];
+        var draggedSlot = issueEffectiveSlot(dragged, draggedIdx);
+        var targetSlot = issueEffectiveSlot(target, targetIdx);
+        dragged.rowSlot = targetSlot;
+        target.rowSlot = draggedSlot;
+      } else {
+        return;
+      }
+      r.issues = issues;
     });
   }
 
   document.addEventListener("pointerdown", function (e) {
     var handle = e.target.closest(".drag-handle");
     if (!handle) return;
-    var li = handle.closest("li[data-item-id]");
-    var ul = handle.closest("ul.item-list");
-    if (!li || !ul) return;
+    var cell = handle.closest(".item-cell");
+    if (!cell) return;
     e.preventDefault();
-    dragState = { li: li, ul: ul, pointerId: e.pointerId };
-    li.classList.add("item-dragging");
+    dragState = {
+      cell: cell,
+      rowId: cell.getAttribute("data-row-id"),
+      listKey: cell.getAttribute("data-list-key"),
+      itemId: cell.getAttribute("data-item-id"),
+      pointerId: e.pointerId,
+      targetCell: null
+    };
+    cell.classList.add("item-dragging");
     try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   });
 
   document.addEventListener("pointermove", function (e) {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
     var overEl = document.elementFromPoint(e.clientX, e.clientY);
-    var overLi = overEl && overEl.closest && overEl.closest("li[data-item-id]");
-    if (!overLi || overLi === dragState.li || overLi.parentElement !== dragState.ul) return;
-    var rect = overLi.getBoundingClientRect();
-    var before = (e.clientY - rect.top) < rect.height / 2;
-    dragState.ul.insertBefore(dragState.li, before ? overLi : overLi.nextSibling);
+    var overCell = overEl && overEl.closest && overEl.closest('.item-cell[data-row-id="' + dragState.rowId + '"]');
+    if (overCell === dragState.cell) overCell = null;
+    if (overCell && dragState.listKey === "status" && overCell.getAttribute("data-list-key") !== "status") overCell = null;
+    if (dragState.targetCell && dragState.targetCell !== overCell) {
+      dragState.targetCell.classList.remove("drag-target-highlight");
+    }
+    if (overCell) overCell.classList.add("drag-target-highlight");
+    dragState.targetCell = overCell || null;
   });
 
   function endDrag(e) {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
-    var li = dragState.li, ul = dragState.ul;
-    li.classList.remove("item-dragging");
-    var rowId = ul.getAttribute("data-row-id");
-    var listKey = ul.getAttribute("data-list-key");
-    var newOrderIds = Array.prototype.slice.call(ul.querySelectorAll("li[data-item-id]")).map(function (x) {
-      return x.getAttribute("data-item-id");
-    });
+    var cell = dragState.cell, target = dragState.targetCell;
+    cell.classList.remove("item-dragging");
+    if (target) target.classList.remove("drag-target-highlight");
+    var rowId = dragState.rowId, listKey = dragState.listKey, itemId = dragState.itemId;
+    var targetListKey = target ? target.getAttribute("data-list-key") : null;
+    var targetItemId = target ? target.getAttribute("data-item-id") : null;
     dragState = null;
-    if (rowId && listKey) reorderItems(rowId, listKey, newOrderIds);
+    if (!target || !rowId) return;
+    if (listKey === "status") {
+      if (targetListKey === "status") reorderStatusItems(rowId, itemId, targetItemId);
+    } else if (listKey === "issues") {
+      reorderIssueItem(rowId, itemId, targetListKey, targetItemId);
+    }
   }
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
@@ -1429,6 +1503,14 @@
       var r = state.rows.find(function (x) { return x.id === rowId; });
       if (!r) return;
       r[listKey] = r[listKey] || [];
+      if (listKey === "issues") {
+        var maxSlot = -1;
+        r.issues.forEach(function (existing, idx) {
+          var s = issueEffectiveSlot(existing, idx);
+          if (s > maxSlot) maxSlot = s;
+        });
+        item.rowSlot = maxSlot + 1;
+      }
       r[listKey].push(item);
       r.updatedAt = nowIso();
       pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'에 " + (listKey === "issues" ? "문제점" : "업무현황") + "을 추가했습니다.");
