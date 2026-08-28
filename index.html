@@ -137,6 +137,7 @@
     background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px;
     padding: 8px 12px; font-size: 12.5px; color: var(--accent-strong);
   }
+  .archive-banner-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
   .identity-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .identity { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted); }
@@ -866,12 +867,15 @@
         (!ui.myName ? renderNameBanner() : "") +
         (!dataLoaded ? '<div class="mode-banner">서버에 연결하는 중입니다...</div>' : "") +
         (dataLoaded && !canWrite ? '<div class="mode-banner">서버 연결에 실패했습니다. 새로고침 해 주세요.</div>' : "") +
-        (archive ? '<div class="archive-banner">📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장) ' +
+        (archive ? '<div class="archive-banner">' +
+          '<span>📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장)</span>' +
           '<button class="chip-btn" type="button" data-action="exit-archive-view">현재로 돌아가기</button>' +
           ((canWrite && dataLoaded) ? (
-            ui.pendingDeleteArchive
-              ? ' 이 기록을 삭제할까요? <button class="danger-confirm" type="button" data-action="delete-archive-confirm">삭제 확정</button> <button class="chip-btn" type="button" data-action="delete-archive-cancel">취소</button>'
-              : ' <button class="chip-btn" type="button" data-action="delete-archive" title="이 저장 기록 삭제">🗑 삭제</button>'
+            '<span class="archive-banner-actions">' +
+              (ui.pendingDeleteArchive
+                ? '이 기록을 삭제할까요? <button class="danger-confirm" type="button" data-action="delete-archive-confirm">삭제 확정</button> <button class="chip-btn" type="button" data-action="delete-archive-cancel">취소</button>'
+                : '<button class="chip-btn" type="button" data-action="delete-archive" title="이 저장 기록 삭제">🗑 삭제</button>') +
+            '</span>'
           ) : "") +
         '</div>' : "") +
       '</div>' +
