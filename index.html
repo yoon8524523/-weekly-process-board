@@ -895,14 +895,14 @@
       html += renderItemCell(row, "status", it, idx, 1, idx + 2, dragStatusEnabled);
     });
     if (!displayStatus.length) html += '<div class="empty-hint gc1" style="grid-column:1;grid-row:2">등록된 항목이 없습니다.</div>';
-    html += renderAddForm(row, "status", 1, displayStatus.length + 2);
+    html += renderAddForm(row, "status", 1, displayStatus.length ? displayStatus.length + 2 : 3);
 
     html += '<h4 class="col-head gc2" style="grid-column:2;grid-row:1">문제점 및 대책</h4>';
     issueEntries.forEach(function (entry) {
       html += renderItemCell(row, "issues", entry.it, entry.idx, 2, entry.slot + 2, dragIssuesEnabled);
     });
     if (!issueEntries.length) html += '<div class="empty-hint gc2" style="grid-column:2;grid-row:2">등록된 항목이 없습니다.</div>';
-    html += renderAddForm(row, "issues", 2, maxIssueSlot + 3);
+    html += renderAddForm(row, "issues", 2, issueEntries.length ? maxIssueSlot + 3 : 3);
 
     return '<div class="card-body">' + html + '</div>';
   }
