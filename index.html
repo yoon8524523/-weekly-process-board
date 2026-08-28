@@ -306,6 +306,12 @@
   .item-meta { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
   .item-actions { display: flex; gap: 4px; flex-shrink: 0; }
   .empty-hint { font-size: 11px; color: var(--ink-muted); opacity: 0.65; padding: 6px 2px; font-style: italic; }
+  .drag-handle {
+    cursor: grab; color: var(--ink-muted); flex-shrink: 0; touch-action: none;
+    user-select: none; font-size: 14px; line-height: 1.5; padding: 0 2px 0 0;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .item-list li.item-dragging { opacity: 0.45; background: var(--accent-soft); }
 
   .item-edit-row { margin-bottom: 4px; }
   .item-edit-input {
@@ -799,6 +805,7 @@
     var addOpen = !!ui.addItem[addKey];
     var withSchedule = listKey === "status";
     var editableText = true;
+    var dragEnabled = listKey === "status" && canWriteNow && !searchQuery && items.length > 1;
 
     var lis = items.map(function (it) {
       var pendingKey = row.id + ":" + listKey + ":" + it.id;
@@ -808,7 +815,7 @@
 
       if (editingItem) {
         return (
-          '<li>' +
+          '<li data-item-id="' + it.id + '">' +
             '<div class="item-edit-row">' +
               '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(it.text) + '</textarea>' +
             '</div>' +
@@ -824,8 +831,9 @@
       }
 
       return (
-        '<li>' +
+        '<li data-item-id="' + it.id + '">' +
           '<div class="item-row">' +
+            (dragEnabled ? '<span class="drag-handle" title="드래그해서 순서 변경">⠿</span>' : '') +
             '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
             (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
           '</div>' +
@@ -859,12 +867,65 @@
     return (
       '<div class="panel">' +
         '<h4>' + title + '</h4>' +
-        '<ul class="item-list' + (listKey === "issues" ? " issues" : "") + '">' + lis + '</ul>' +
+        '<ul class="item-list' + (listKey === "issues" ? " issues" : "") + '" data-row-id="' + row.id + '" data-list-key="' + listKey + '">' + lis + '</ul>' +
         (!items.length ? '<div class="empty-hint">등록된 항목이 없습니다.</div>' : "") +
         addForm +
       '</div>'
     );
   }
+
+  /* ================= drag-to-reorder (업무현황) ================= */
+  var dragState = null; // { li, ul, pointerId }
+
+  function reorderItems(rowId, listKey, newOrderIds) {
+    commit(function () {
+      var r = state.rows.find(function (x) { return x.id === rowId; });
+      if (!r) return;
+      var items = r[listKey] || [];
+      var byId = {};
+      items.forEach(function (it) { byId[it.id] = it; });
+      var reordered = newOrderIds.map(function (id) { return byId[id]; }).filter(Boolean);
+      items.forEach(function (it) { if (reordered.indexOf(it) === -1) reordered.push(it); }); // safety net
+      r[listKey] = reordered;
+    });
+  }
+
+  document.addEventListener("pointerdown", function (e) {
+    var handle = e.target.closest(".drag-handle");
+    if (!handle) return;
+    var li = handle.closest("li[data-item-id]");
+    var ul = handle.closest("ul.item-list");
+    if (!li || !ul) return;
+    e.preventDefault();
+    dragState = { li: li, ul: ul, pointerId: e.pointerId };
+    li.classList.add("item-dragging");
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  });
+
+  document.addEventListener("pointermove", function (e) {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    var overEl = document.elementFromPoint(e.clientX, e.clientY);
+    var overLi = overEl && overEl.closest && overEl.closest("li[data-item-id]");
+    if (!overLi || overLi === dragState.li || overLi.parentElement !== dragState.ul) return;
+    var rect = overLi.getBoundingClientRect();
+    var before = (e.clientY - rect.top) < rect.height / 2;
+    dragState.ul.insertBefore(dragState.li, before ? overLi : overLi.nextSibling);
+  });
+
+  function endDrag(e) {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    var li = dragState.li, ul = dragState.ul;
+    li.classList.remove("item-dragging");
+    var rowId = ul.getAttribute("data-row-id");
+    var listKey = ul.getAttribute("data-list-key");
+    var newOrderIds = Array.prototype.slice.call(ul.querySelectorAll("li[data-item-id]")).map(function (x) {
+      return x.getAttribute("data-item-id");
+    });
+    dragState = null;
+    if (rowId && listKey) reorderItems(rowId, listKey, newOrderIds);
+  }
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
 
   var isComposing = false;   // true while any input/textarea has an active IME (e.g. Korean) composition
   var renderPending = false; // a render was requested but deferred because composition was in progress
