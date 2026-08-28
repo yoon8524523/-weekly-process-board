@@ -287,14 +287,19 @@
   .cat-option:hover { background: var(--surface-2); }
   .cat-option-selected { font-weight: 700; color: var(--accent-strong); }
   .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
+  .card-head-main { flex: 1; min-width: 0; }
+  .title-meta-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .card-title { font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
   .issue-flag {
     font-size: 11px; font-weight: 700; background: var(--warn-soft); color: var(--warn);
     padding: 2px 8px; border-radius: 999px;
   }
   .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-  .meta-row { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 12.5px; color: var(--ink-muted); }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 3px 18px; font-size: 12.5px; color: var(--ink-muted); flex-shrink: 0; }
   .meta-row b { color: var(--ink); font-weight: 600; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+  @media (max-width: 560px) {
+    .meta-row { flex-direction: column; gap: 2px; align-items: flex-end; }
+  }
   .updated-at { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
 
   .edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
@@ -768,7 +773,7 @@
     } else {
       head =
         '<div class="card-head-top">' +
-          '<div>' +
+          '<div class="card-head-main">' +
             '<div class="card-title-row">' +
               (canWriteNow
                 ? '<span class="cat-anchor">' +
@@ -779,7 +784,14 @@
               (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
               ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
             '</div>' +
-            '<div class="card-title">' + escapeHtml(row.name) + '</div>' +
+            '<div class="title-meta-row">' +
+              '<div class="card-title">' + escapeHtml(row.name) + '</div>' +
+              '<div class="meta-row">' +
+                '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
+                '<span>Project Manager <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
+                '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
+              '</div>' +
+            '</div>' +
           '</div>' +
           '<div class="card-actions">' +
             (canWriteNow ? (
@@ -789,11 +801,6 @@
                 : '<button class="icon-btn" title="삭제" data-action="delete-row" data-id="' + row.id + '">✕</button>')
             ) : '') +
           '</div>' +
-        '</div>' +
-        '<div class="meta-row">' +
-          '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
-          '<span>Project Manager <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
-          '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
         '</div>' +
         '<div class="updated-at">최근 변경 ' + timeAgo(rowLatestTs(row)) + '</div>';
     }
@@ -1030,6 +1037,18 @@
   }
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
+
+  // close the calendar / category picker popovers when clicking anywhere outside them
+  document.addEventListener("click", function (e) {
+    if (ui.calendarOpen && !e.target.closest(".cal-anchor")) {
+      ui.calendarOpen = false;
+      render();
+    }
+    if (ui.categoryPickerRow && !e.target.closest(".cat-anchor")) {
+      ui.categoryPickerRow = null;
+      render();
+    }
+  });
 
   var isComposing = false;   // true while any input/textarea has an active IME (e.g. Korean) composition
   var renderPending = false; // a render was requested but deferred because composition was in progress
