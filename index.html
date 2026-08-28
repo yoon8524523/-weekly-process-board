@@ -303,6 +303,7 @@
   .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .item-text { flex: 1; white-space: pre-line; }
   .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .item-footer-indent { padding-left: 24px; } /* lines up with .item-text, which sits right of the .drag-handle above it */
   .item-meta { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
   .item-actions { display: flex; gap: 4px; flex-shrink: 0; }
   .empty-hint { font-size: 11px; color: var(--ink-muted); opacity: 0.65; padding: 6px 2px; font-style: italic; }
@@ -837,7 +838,7 @@
             '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
             (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
           '</div>' +
-          '<div class="item-footer">' +
+          '<div class="item-footer' + (dragEnabled ? ' item-footer-indent' : '') + '">' +
             '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
             (canWriteNow ? (
               '<div class="item-actions">' +
