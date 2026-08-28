@@ -673,7 +673,7 @@
       return '<li><span class="t num">' + timeAgo(a.ts) + '</span><span>' + escapeHtml(a.text) + '</span></li>';
     }).join("");
     return (
-      '<details class="activity"><summary>최근 1주일 활동 ' + items.length + '건</summary>' +
+      '<details class="activity"><summary>최근 활동 ' + items.length + '건</summary>' +
       '<div class="activity-scroll"><ul class="activity-list">' + lis + '</ul></div></details>'
     );
   }
