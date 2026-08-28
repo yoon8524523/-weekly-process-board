@@ -419,24 +419,68 @@
   } catch (e) { /* storage unavailable: keep defaults */ }
 
   var canWrite = true; // anyone with the link can edit — no login/capability gating
-  var dbRef = firebase.database().ref("board");
+  var ARCHIVE_RETENTION_DAYS = 21; // "최근 3주"만 달력 저장 기록을 유지
+  var rowsRef = firebase.database().ref("board/rows");
+  var activityRef = firebase.database().ref("board/activity");
+  var archivesRef = firebase.database().ref("board/archives");
 
-  dbRef.on("value", function (snap) {
-    var incoming = snap.val();
-    if (incoming) {
-      state = incoming;
-      state.rows = state.rows || [];
-      state.activity = state.activity || [];
-      state.archives = state.archives || {};
-    }
-    dataLoaded = true;
-    render();
-  }, function (err) {
+  function archiveCutoffStr() {
+    var d = new Date();
+    d.setDate(d.getDate() - ARCHIVE_RETENTION_DAYS);
+    return fmtDate(d);
+  }
+
+  // deletes any saved archive older than the retention window, so old full-board
+  // snapshots don't sit in the database forever
+  function pruneOldArchives() {
+    archivesRef.orderByKey().endBefore(archiveCutoffStr()).once("value").then(function (snap) {
+      var updates = {};
+      snap.forEach(function (child) { updates[child.key] = null; });
+      if (Object.keys(updates).length) archivesRef.update(updates);
+    }).catch(function () { /* best-effort cleanup; ignore failures */ });
+  }
+
+  var rowsLoaded = false, activityLoaded = false, archivesLoaded = false;
+  function onDbError(err) {
     dataLoaded = true;
     canWrite = false;
     render();
     toast("서버 연결에 실패했습니다: " + (err && err.message ? err.message : ""));
-  });
+  }
+  function markLoaded(which) {
+    if (which === "rows") rowsLoaded = true;
+    if (which === "activity") activityLoaded = true;
+    if (which === "archives") archivesLoaded = true;
+    if (!dataLoaded && rowsLoaded && activityLoaded && archivesLoaded) dataLoaded = true;
+    render();
+  }
+
+  // rows: small, bounded set of active projects — always loaded in full
+  rowsRef.on("value", function (snap) {
+    state.rows = snap.val() || [];
+    markLoaded("rows");
+  }, onDbError);
+
+  // activity: only the most recent 20 entries are fetched via a Firebase query,
+  // instead of downloading the entire history on every load
+  activityRef.orderByKey().limitToLast(20).on("value", function (snap) {
+    var list = [];
+    snap.forEach(function (child) {
+      var v = child.val() || {};
+      list.push({ id: child.key, text: v.text, ts: v.ts });
+    });
+    list.reverse(); // newest first, matching the rest of the app's convention
+    state.activity = list;
+    markLoaded("activity");
+  }, onDbError);
+
+  // archives: only the last N days are fetched (older ones are pruned server-side too)
+  archivesRef.orderByKey().startAt(archiveCutoffStr()).on("value", function (snap) {
+    state.archives = snap.val() || {};
+    markLoaded("archives");
+  }, onDbError);
+
+  pruneOldArchives();
 
   /* ================= helpers ================= */
   function uid() {
@@ -474,9 +518,7 @@
   }
 
   function pushActivity(text) {
-    state.activity = state.activity || [];
-    state.activity.unshift({ id: uid(), ts: nowIso(), text: text });
-    if (state.activity.length > 40) state.activity.length = 40;
+    activityRef.push({ text: text, ts: nowIso() });
   }
 
   function toast(msg) {
@@ -529,12 +571,11 @@
 
   /* ================= mutation / sync pipeline ================= */
   function commit(mutateFn) {
-    var prev = JSON.parse(JSON.stringify(state));
+    var prevRows = JSON.parse(JSON.stringify(state.rows));
     mutateFn();
-    state.updatedAt = nowIso();
     render();
-    dbRef.set(state).catch(function (err) {
-      state = prev;
+    rowsRef.set(state.rows).catch(function (err) {
+      state.rows = prevRows;
       render();
       toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
     });
@@ -1037,15 +1078,17 @@
       case "save-snapshot": {
         var snapDate = todayStr();
         var existed = !!(state.archives && state.archives[snapDate]);
-        commit(function () {
-          state.archives = state.archives || {};
-          state.archives[snapDate] = {
-            rows: JSON.parse(JSON.stringify(state.rows)),
-            savedAt: nowIso(),
-            savedBy: whoAmI()
-          };
-          pushActivity(whoAmI() + "님이 " + snapDate + " 날짜로 주간공정회의록을 저장했습니다.");
+        var snapshotData = {
+          rows: JSON.parse(JSON.stringify(state.rows)),
+          savedAt: nowIso(),
+          savedBy: whoAmI()
+        };
+        archivesRef.child(snapDate).set(snapshotData).then(function () {
+          pruneOldArchives();
+        }).catch(function (err) {
+          toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
         });
+        pushActivity(whoAmI() + "님이 " + snapDate + " 날짜로 주간공정회의록을 저장했습니다.");
         toast((existed ? snapDate + " 날짜 기록을 최신 내용으로 덮어썼습니다." : snapDate + " 날짜로 저장되었습니다."));
         break;
       }
@@ -1069,11 +1112,12 @@
         var deletedDate = ui.viewingArchive;
         ui.pendingDeleteArchive = false;
         ui.viewingArchive = null;
-        commit(function () {
-          if (state.archives) delete state.archives[deletedDate];
-          pushActivity(whoAmI() + "님이 " + deletedDate + " 저장 기록을 삭제했습니다.");
+        archivesRef.child(deletedDate).remove().catch(function (err) {
+          toast("삭제에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
         });
+        pushActivity(whoAmI() + "님이 " + deletedDate + " 저장 기록을 삭제했습니다.");
         toast(deletedDate + " 저장 기록을 삭제했습니다.");
+        render();
         break;
       }
       case "new-row-toggle":
