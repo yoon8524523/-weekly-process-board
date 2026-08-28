@@ -395,7 +395,8 @@
     editItem: {},       // "rowId:listKey:itemId" -> true while item text edit form open
     calendarOpen: false,
     calendarMonth: null,  // { y, m } while calendar popover open
-    viewingArchive: null  // date string while browsing a saved past snapshot
+    viewingArchive: null, // date string while browsing a saved past snapshot
+    pendingDeleteArchive: false // true while confirming deletion of the currently-viewed archive
   };
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
@@ -865,7 +866,14 @@
         (!ui.myName ? renderNameBanner() : "") +
         (!dataLoaded ? '<div class="mode-banner">서버에 연결하는 중입니다...</div>' : "") +
         (dataLoaded && !canWrite ? '<div class="mode-banner">서버 연결에 실패했습니다. 새로고침 해 주세요.</div>' : "") +
-        (archive ? '<div class="archive-banner">📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장) <button class="chip-btn" type="button" data-action="exit-archive-view">현재로 돌아가기</button></div>' : "") +
+        (archive ? '<div class="archive-banner">📁 <b>' + escapeHtml(ui.viewingArchive) + '</b>에 저장된 회의록을 보고 있습니다 (읽기 전용, ' + timeAgo(archive.savedAt) + ' 저장) ' +
+          '<button class="chip-btn" type="button" data-action="exit-archive-view">현재로 돌아가기</button>' +
+          ((canWrite && dataLoaded) ? (
+            ui.pendingDeleteArchive
+              ? ' 이 기록을 삭제할까요? <button class="danger-confirm" type="button" data-action="delete-archive-confirm">삭제 확정</button> <button class="chip-btn" type="button" data-action="delete-archive-cancel">취소</button>'
+              : ' <button class="chip-btn" type="button" data-action="delete-archive" title="이 저장 기록 삭제">🗑 삭제</button>'
+          ) : "") +
+        '</div>' : "") +
       '</div>' +
       '<div class="toolbar">' +
         '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 이름 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
@@ -1040,6 +1048,28 @@
       case "exit-archive-view": {
         ui.viewingArchive = null;
         render();
+        break;
+      }
+      case "delete-archive": {
+        ui.pendingDeleteArchive = true;
+        render();
+        setTimeout(function () { if (ui.pendingDeleteArchive) { ui.pendingDeleteArchive = false; render(); } }, 4000);
+        break;
+      }
+      case "delete-archive-cancel": {
+        ui.pendingDeleteArchive = false;
+        render();
+        break;
+      }
+      case "delete-archive-confirm": {
+        var deletedDate = ui.viewingArchive;
+        ui.pendingDeleteArchive = false;
+        ui.viewingArchive = null;
+        commit(function () {
+          if (state.archives) delete state.archives[deletedDate];
+          pushActivity(whoAmI() + "님이 " + deletedDate + " 저장 기록을 삭제했습니다.");
+        });
+        toast(deletedDate + " 저장 기록을 삭제했습니다.");
         break;
       }
       case "new-row-toggle":
