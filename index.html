@@ -274,6 +274,18 @@
   .card.noncontract .badge { background: var(--surface-2); color: var(--ink-muted); }
   .badge-btn { border: none; font-family: inherit; cursor: pointer; }
   .badge-btn:hover { filter: brightness(0.94); }
+  .cat-anchor { position: relative; display: inline-block; }
+  .cat-popover {
+    position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 30;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 5px; display: flex; flex-direction: column; gap: 2px; min-width: 110px;
+  }
+  .cat-option {
+    text-align: left; padding: 6px 10px; border-radius: 6px; border: none; background: transparent;
+    font-size: 12.5px; font-family: inherit; color: var(--ink); cursor: pointer; white-space: nowrap;
+  }
+  .cat-option:hover { background: var(--surface-2); }
+  .cat-option-selected { font-weight: 700; color: var(--accent-strong); }
   .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
   .card-title { font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
   .issue-flag {
@@ -414,7 +426,8 @@
     calendarOpen: false,
     calendarMonth: null,  // { y, m } while calendar popover open
     viewingArchive: null, // date string while browsing a saved past snapshot
-    pendingDeleteArchive: false // true while confirming deletion of the currently-viewed archive
+    pendingDeleteArchive: false, // true while confirming deletion of the currently-viewed archive
+    categoryPickerRow: null // row id whose category picker popover is open
   };
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
@@ -605,6 +618,15 @@
     return "프로젝트";
   }
 
+  var CATEGORY_OPTIONS = [["project", "프로젝트"], ["noncontract", "계약외"], ["safety", "안전관리"]];
+  function renderCategoryPicker(row) {
+    var options = CATEGORY_OPTIONS.map(function (c) {
+      var selected = row.category === c[0];
+      return '<button type="button" class="cat-option' + (selected ? ' cat-option-selected' : '') + '" data-action="set-category" data-id="' + row.id + '" data-value="' + c[0] + '">' + c[1] + '</button>';
+    }).join("");
+    return '<div class="cat-popover">' + options + '</div>';
+  }
+
   function filteredRows(sourceRows) {
     var q = ui.filterText.trim().toLowerCase();
     var rows = (sourceRows || []).filter(function (r) {
@@ -749,7 +771,10 @@
           '<div>' +
             '<div class="card-title-row">' +
               (canWriteNow
-                ? '<button type="button" class="badge badge-btn" data-action="cycle-category" data-id="' + row.id + '" title="클릭하면 분류가 바뀝니다 (프로젝트 → 계약외 → 안전관리)">' + categoryLabel(row.category) + '</button>'
+                ? '<span class="cat-anchor">' +
+                    '<button type="button" class="badge badge-btn" data-action="toggle-category-picker" data-id="' + row.id + '" title="클릭해서 분류 선택">' + categoryLabel(row.category) + '</button>' +
+                    (ui.categoryPickerRow === row.id ? renderCategoryPicker(row) : '') +
+                  '</span>'
                 : '<span class="badge">' + categoryLabel(row.category) + '</span>') +
               (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
               ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
@@ -1315,15 +1340,20 @@
         });
         break;
       }
-      case "cycle-category": {
-        var CATEGORY_CYCLE = ["project", "noncontract", "safety"];
+      case "toggle-category-picker": {
+        ui.categoryPickerRow = (ui.categoryPickerRow === id) ? null : id;
+        render();
+        break;
+      }
+      case "set-category": {
+        var newCat = el.getAttribute("data-value");
+        ui.categoryPickerRow = null;
         commit(function () {
           var r = state.rows.find(function (x) { return x.id === id; });
-          if (!r) return;
-          var curIdx = CATEGORY_CYCLE.indexOf(r.category);
-          r.category = CATEGORY_CYCLE[(curIdx + 1) % CATEGORY_CYCLE.length];
+          if (!r || r.category === newCat) return;
+          r.category = newCat;
           r.updatedAt = nowIso();
-          pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 분류를 " + categoryLabel(r.category) + "(으)로 변경했습니다.");
+          pushActivity(whoAmI() + "님이 '" + r.name.split("\n")[0] + "'의 분류를 " + categoryLabel(newCat) + "(으)로 변경했습니다.");
         });
         break;
       }
