@@ -157,6 +157,12 @@
   .leave-cal-clickable { cursor: pointer; }
   .leave-cal-clickable:hover { border-color: var(--accent); background: var(--surface-2); }
   .leave-cal-clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .date-field-anchor { display: block; }
+  .date-field-btn {
+    width: 100%; text-align: left; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 13.5px; cursor: pointer;
+  }
+  .date-field-btn:hover { border-color: var(--accent); }
   .leave-cal-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .leave-cal-daynum { font-size: 11px; color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
   .leave-cal-chips { display: flex; flex-direction: column; gap: 2px; }
@@ -497,8 +503,11 @@
     leavesMonth: null,     // { y, m } for the leaves calendar month being viewed
     leaveFormOpen: false,
     leaveFormDate: null,    // date string to prefill start/end when opened by clicking a calendar day
+    leaveFormDraft: null,   // { name, start, end, memo, type } snapshot of the add-form's in-progress fields
     pendingDeleteLeave: {},
-    editLeave: {}           // leave id -> true while its edit form is open
+    editLeave: {},          // leave id -> true while its edit form is open
+    editLeaveDraft: {},     // leave id -> in-progress edit-form field snapshot (see leaveFormDraft)
+    datePicker: null        // { scope: "add" | leaveId, field: "start"|"end", y, m } while a date-field popover is open
   };
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
@@ -1153,6 +1162,10 @@
       ui.categoryPickerRow = null;
       render();
     }
+    if (ui.datePicker && !e.target.closest(".date-field-anchor")) {
+      ui.datePicker = null;
+      render();
+    }
   });
 
   var isComposing = false;   // true while any input/textarea has an active IME (e.g. Korean) composition
@@ -1287,6 +1300,67 @@
   }
 
   /* ================= leaves (휴가/출장) view ================= */
+  // "add" = the new-leave form (lf-*); any other scope value is a leave id being edited (le-*-<id>)
+  function dateFieldIds(scope) {
+    if (scope === "add") return { name: "lf-name", start: "lf-start", end: "lf-end", memo: "lf-memo", typeName: "lf-type" };
+    return { name: "le-name-" + scope, start: "le-start-" + scope, end: "le-end-" + scope, memo: "le-memo-" + scope, typeName: "le-type-" + scope };
+  }
+
+  // snapshots the leave form's current (possibly unsaved) field values into ui state so they
+  // survive the re-render triggered by opening/paging the date-field popover
+  function captureLeaveDraft(scope) {
+    var ids = dateFieldIds(scope);
+    var nameEl = document.getElementById(ids.name);
+    if (!nameEl) return null;
+    var draft = {
+      name: nameEl.value,
+      start: (document.getElementById(ids.start) || {}).value || todayStr(),
+      end: (document.getElementById(ids.end) || {}).value || todayStr(),
+      memo: (document.getElementById(ids.memo) || {}).value || "",
+      type: (document.querySelector('input[name="' + ids.typeName + '"]:checked') || {}).value || "vacation"
+    };
+    if (scope === "add") ui.leaveFormDraft = draft; else ui.editLeaveDraft[scope] = draft;
+    return draft;
+  }
+
+  function renderDateField(scope, which, value) {
+    var ids = dateFieldIds(scope);
+    var fieldId = which === "start" ? ids.start : ids.end;
+    var isOpen = !!(ui.datePicker && ui.datePicker.scope === scope && ui.datePicker.field === which);
+    return (
+      '<input type="hidden" id="' + fieldId + '" value="' + escapeHtml(value) + '">' +
+      '<span class="cal-anchor date-field-anchor">' +
+        '<button type="button" class="date-field-btn num" data-action="date-field-toggle" data-scope="' + scope + '" data-field="' + which + '">' + escapeHtml(value || "날짜 선택") + '</button>' +
+        (isOpen ? renderFieldCalendarPopover(scope, which, value) : "") +
+      '</span>'
+    );
+  }
+
+  function renderFieldCalendarPopover(scope, which, value) {
+    var y = ui.datePicker.y, m = ui.datePicker.m;
+    var total = daysInMonth(y, m);
+    var startWeekday = firstWeekday(y, m);
+    var todayVal = todayStr();
+    var cells = "";
+    for (var i = 0; i < startWeekday; i++) cells += '<div class="cal-cell cal-empty"></div>';
+    for (var d = 1; d <= total; d++) {
+      var dateStr = fmtDate(new Date(y, m, d));
+      cells += '<button type="button" class="cal-cell' + (dateStr === todayVal ? ' cal-today' : '') + (dateStr === value ? ' cal-selected' : '') +
+        '" data-action="date-field-pick-day" data-scope="' + scope + '" data-field="' + which + '" data-date="' + dateStr + '">' + d + '</button>';
+    }
+    return (
+      '<div class="cal-popover">' +
+        '<div class="cal-header">' +
+          '<button type="button" class="icon-btn" data-action="date-field-prev-month" data-scope="' + scope + '" data-field="' + which + '">◀</button>' +
+          '<span class="cal-month-label">' + y + '년 ' + (m + 1) + '월</span>' +
+          '<button type="button" class="icon-btn" data-action="date-field-next-month" data-scope="' + scope + '" data-field="' + which + '">▶</button>' +
+        '</div>' +
+        '<div class="cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>' +
+        '<div class="cal-grid">' + cells + '</div>' +
+      '</div>'
+    );
+  }
+
   function renderLeavesSection() {
     if (!ui.leavesMonth) ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
     var y = ui.leavesMonth.y, m = ui.leavesMonth.m;
@@ -1363,18 +1437,19 @@
   }
 
   function renderLeaveEditForm(e) {
+    var draft = ui.editLeaveDraft[e.id] || { name: e.name, start: e.start, end: e.end, memo: e.memo || "", type: e.type };
     return (
       '<div class="new-row-form">' +
         '<div class="grid-fields">' +
-          field("이름", '<input id="le-name-' + e.id + '" value="' + escapeHtml(e.name) + '">') +
-          field("시작일", '<input id="le-start-' + e.id + '" type="date" value="' + escapeHtml(e.start) + '">') +
-          field("종료일", '<input id="le-end-' + e.id + '" type="date" value="' + escapeHtml(e.end) + '">') +
+          field("이름", '<input id="le-name-' + e.id + '" value="' + escapeHtml(draft.name) + '">') +
+          field("시작일", renderDateField(e.id, "start", draft.start)) +
+          field("종료일", renderDateField(e.id, "end", draft.end)) +
         '</div>' +
         '<div class="radio-row">' +
-          '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (e.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
-          '<label><input type="radio" name="le-type-' + e.id + '" value="trip"' + (e.type === "trip" ? " checked" : "") + '> 출장</label>' +
+          '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
+          '<label><input type="radio" name="le-type-' + e.id + '" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
-        field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(e.memo || "") + '">') +
+        field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(draft.memo) + '">') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-leave-cancel" data-id="' + e.id + '" type="button">취소</button>' +
           '<button class="primary-btn" data-action="edit-leave-save" data-id="' + e.id + '" type="button">저장</button>' +
@@ -1386,18 +1461,19 @@
   function renderLeaveForm() {
     if (!ui.leaveFormOpen) return "";
     var prefillDate = ui.leaveFormDate || todayStr();
+    var draft = ui.leaveFormDraft || { name: whoAmI(), start: prefillDate, end: prefillDate, memo: "", type: "vacation" };
     return (
       '<div class="new-row-form">' +
         '<div class="grid-fields">' +
-          field("이름", '<input id="lf-name" placeholder="이름" value="' + escapeHtml(whoAmI()) + '">') +
-          field("시작일", '<input id="lf-start" type="date" value="' + prefillDate + '">') +
-          field("종료일", '<input id="lf-end" type="date" value="' + prefillDate + '">') +
+          field("이름", '<input id="lf-name" placeholder="이름" value="' + escapeHtml(draft.name) + '">') +
+          field("시작일", renderDateField("add", "start", draft.start)) +
+          field("종료일", renderDateField("add", "end", draft.end)) +
         '</div>' +
         '<div class="radio-row">' +
-          '<label><input type="radio" name="lf-type" value="vacation" checked> 휴가</label>' +
-          '<label><input type="radio" name="lf-type" value="trip"> 출장</label>' +
+          '<label><input type="radio" name="lf-type" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
+          '<label><input type="radio" name="lf-type" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
-        field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장">') +
+        field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="leave-form-cancel" type="button">취소</button>' +
           '<button class="primary-btn" data-action="leave-form-submit" type="button">추가</button>' +
@@ -1603,11 +1679,15 @@
       case "leave-form-toggle":
         ui.leaveFormOpen = !ui.leaveFormOpen;
         ui.leaveFormDate = null;
+        ui.leaveFormDraft = null;
+        if (ui.datePicker && ui.datePicker.scope === "add") ui.datePicker = null;
         render();
         break;
       case "leave-day-click": {
         ui.leaveFormOpen = true;
         ui.leaveFormDate = el.getAttribute("data-date");
+        ui.leaveFormDraft = null;
+        if (ui.datePicker && ui.datePicker.scope === "add") ui.datePicker = null;
         render();
         var lfNameEl = document.getElementById("lf-name");
         if (lfNameEl) { lfNameEl.focus(); lfNameEl.select(); }
@@ -1616,6 +1696,8 @@
       case "leave-form-cancel":
         ui.leaveFormOpen = false;
         ui.leaveFormDate = null;
+        ui.leaveFormDraft = null;
+        if (ui.datePicker && ui.datePicker.scope === "add") ui.datePicker = null;
         render();
         break;
       case "leave-form-submit": {
@@ -1629,6 +1711,8 @@
         if (lfEnd < lfStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
         ui.leaveFormOpen = false;
         ui.leaveFormDate = null;
+        ui.leaveFormDraft = null;
+        ui.datePicker = null;
         render();
         leavesRef.push({
           name: lfName, type: lfType, start: lfStart, end: lfEnd, memo: lfMemo,
@@ -1642,12 +1726,55 @@
       }
       case "edit-leave-toggle":
         ui.editLeave[id] = !ui.editLeave[id];
+        delete ui.editLeaveDraft[id];
+        if (ui.datePicker && ui.datePicker.scope === id) ui.datePicker = null;
         render();
         break;
       case "edit-leave-cancel":
         ui.editLeave[id] = false;
+        delete ui.editLeaveDraft[id];
+        if (ui.datePicker && ui.datePicker.scope === id) ui.datePicker = null;
         render();
         break;
+      case "date-field-toggle": {
+        var dfScope = el.getAttribute("data-scope");
+        var dfField = el.getAttribute("data-field");
+        var dfDraft = captureLeaveDraft(dfScope);
+        var alreadyOpen = ui.datePicker && ui.datePicker.scope === dfScope && ui.datePicker.field === dfField;
+        if (alreadyOpen) {
+          ui.datePicker = null;
+        } else {
+          var dfCurVal = dfDraft ? (dfField === "start" ? dfDraft.start : dfDraft.end) : todayStr();
+          var dfBase = parseDateStr(dfCurVal);
+          ui.datePicker = { scope: dfScope, field: dfField, y: dfBase.getFullYear(), m: dfBase.getMonth() };
+        }
+        render();
+        break;
+      }
+      case "date-field-prev-month": {
+        captureLeaveDraft(el.getAttribute("data-scope"));
+        ui.datePicker.m -= 1;
+        if (ui.datePicker.m < 0) { ui.datePicker.m = 11; ui.datePicker.y -= 1; }
+        render();
+        break;
+      }
+      case "date-field-next-month": {
+        captureLeaveDraft(el.getAttribute("data-scope"));
+        ui.datePicker.m += 1;
+        if (ui.datePicker.m > 11) { ui.datePicker.m = 0; ui.datePicker.y += 1; }
+        render();
+        break;
+      }
+      case "date-field-pick-day": {
+        var pdScope = el.getAttribute("data-scope");
+        var pdField = el.getAttribute("data-field");
+        var pdDraft = captureLeaveDraft(pdScope) || { name: "", start: todayStr(), end: todayStr(), memo: "", type: "vacation" };
+        pdDraft[pdField] = el.getAttribute("data-date");
+        if (pdScope === "add") ui.leaveFormDraft = pdDraft; else ui.editLeaveDraft[pdScope] = pdDraft;
+        ui.datePicker = null;
+        render();
+        break;
+      }
       case "edit-leave-save": {
         var leName = ((document.getElementById("le-name-" + id) || {}).value || "").trim();
         var leStart = (document.getElementById("le-start-" + id) || {}).value || "";
@@ -1658,6 +1785,8 @@
         if (!leStart || !leEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
         if (leEnd < leStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
         ui.editLeave[id] = false;
+        delete ui.editLeaveDraft[id];
+        ui.datePicker = null;
         render();
         leavesRef.child(id).update({
           name: leName, type: leType, start: leStart, end: leEnd, memo: leMemo
