@@ -163,6 +163,22 @@
     background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn);
   }
 
+  .gate-wrap { min-height: 70vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .gate-card {
+    width: 100%; max-width: 300px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; padding: 24px 22px; text-align: center; box-shadow: var(--shadow);
+  }
+  .gate-card h1 { font-size: 17px; margin-bottom: 4px; }
+  .gate-label { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 14px; }
+  .gate-card input {
+    width: 100%; height: 38px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 14px; text-align: center;
+    letter-spacing: .06em; margin-bottom: 10px;
+  }
+  .gate-card input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .gate-card .primary-btn { width: 100%; }
+  .gate-error { font-size: 12px; color: var(--danger); margin: -2px 0 10px; }
+
   /* ---------- summary + filter ---------- */
   .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 4px; }
   .stat-group { display: flex; gap: 6px; align-items: center; }
@@ -323,11 +339,12 @@
   }
   .item-cell {
     display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; background: var(--surface-2);
+    border: 1px solid var(--line);
     border-radius: 8px; font-size: 13px; min-width: 0;
   }
-  .item-cell.issues { background: var(--danger-soft); }
+  .item-cell.issues { background: var(--danger-soft); border-color: var(--danger-soft); }
   .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .item-text { flex: 1; white-space: pre-line; }
+  .item-text { flex: 1; white-space: pre-line; font-weight: 500; color: var(--ink); }
   .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .item-footer-indent { padding-left: 24px; } /* lines up with .item-text, which sits right of the .drag-handle above it */
   .item-meta { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
@@ -395,6 +412,7 @@
 <div class="toast-root" id="toast-root"></div>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script>
   var firebaseConfig = {
   "apiKey": "AIzaSyD4koISFljzWoC8soWJhXr3U2l5BkWkGmU",
@@ -453,11 +471,53 @@
     }
   } catch (e) { /* storage unavailable: keep defaults */ }
 
-  var canWrite = true; // anyone with the link can edit — no login/capability gating
+  var canWrite = true;
   var ARCHIVE_RETENTION_DAYS = 21; // "최근 3주"만 달력 저장 기록을 유지
   var rowsRef = firebase.database().ref("board/rows");
   var activityRef = firebase.database().ref("board/activity");
   var archivesRef = firebase.database().ref("board/archives");
+
+  /* ================= passcode gate ================= */
+  // App data only starts syncing after anonymous Firebase auth succeeds (required by the
+  // DB rules); the board itself stays hidden behind a shared passcode until the visitor
+  // enters the value stored in config/passcode.
+  var gateOk = false;
+  try { gateOk = localStorage.getItem("wpb_gate_ok") === "1"; } catch (e) {}
+  var gatePasscode = null; // fetched from config/passcode once authenticated
+  var gateError = "";
+
+  firebase.auth().signInAnonymously().then(function () {
+    firebase.database().ref("config/passcode").once("value").then(function (snap) {
+      gatePasscode = snap.val();
+      render();
+    });
+
+    rowsRef.on("value", function (snap) {
+      state.rows = snap.val() || [];
+      markLoaded("rows");
+    }, onDbError);
+
+    activityRef.orderByKey().limitToLast(20).on("value", function (snap) {
+      var list = [];
+      snap.forEach(function (child) {
+        var v = child.val() || {};
+        list.push({ id: child.key, text: v.text, ts: v.ts });
+      });
+      list.reverse();
+      state.activity = list;
+      markLoaded("activity");
+    }, onDbError);
+
+    archivesRef.orderByKey().startAt(archiveCutoffStr()).on("value", function (snap) {
+      state.archives = snap.val() || {};
+      markLoaded("archives");
+    }, onDbError);
+
+    pruneOldArchives();
+  }).catch(function (err) {
+    gateError = "인증 연결에 실패했습니다: " + (err && err.message ? err.message : "");
+    render();
+  });
 
   function archiveCutoffStr() {
     var d = new Date();
@@ -489,33 +549,6 @@
     if (!dataLoaded && rowsLoaded && activityLoaded && archivesLoaded) dataLoaded = true;
     render();
   }
-
-  // rows: small, bounded set of active projects — always loaded in full
-  rowsRef.on("value", function (snap) {
-    state.rows = snap.val() || [];
-    markLoaded("rows");
-  }, onDbError);
-
-  // activity: only the most recent 20 entries are fetched via a Firebase query,
-  // instead of downloading the entire history on every load
-  activityRef.orderByKey().limitToLast(20).on("value", function (snap) {
-    var list = [];
-    snap.forEach(function (child) {
-      var v = child.val() || {};
-      list.push({ id: child.key, text: v.text, ts: v.ts });
-    });
-    list.reverse(); // newest first, matching the rest of the app's convention
-    state.activity = list;
-    markLoaded("activity");
-  }, onDbError);
-
-  // archives: only the last N days are fetched (older ones are pruned server-side too)
-  archivesRef.orderByKey().startAt(archiveCutoffStr()).on("value", function (snap) {
-    state.archives = snap.val() || {};
-    markLoaded("archives");
-  }, onDbError);
-
-  pruneOldArchives();
 
   /* ================= helpers ================= */
   function uid() {
@@ -1071,8 +1104,26 @@
     if (renderPending) { renderPending = false; render(); }
   });
 
+  function renderGate() {
+    return (
+      '<div class="gate-wrap">' +
+        '<div class="gate-card">' +
+          '<h1>주간공정회의록</h1>' +
+          '<p class="gate-label">접속 비밀번호를 입력하세요</p>' +
+          '<input id="gate-input" type="password" placeholder="비밀번호" autofocus>' +
+          (gateError ? '<div class="gate-error">' + escapeHtml(gateError) + '</div>' : "") +
+          '<button class="primary-btn" type="button" data-action="gate-submit">입장</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
   function render() {
     if (isComposing) { renderPending = true; return; }
+    if (!gateOk) {
+      document.getElementById("app").innerHTML = renderGate();
+      return;
+    }
     var archive = ui.viewingArchive ? (state.archives || {})[ui.viewingArchive] : null;
     var sourceRows = archive ? (archive.rows || []) : (state.rows || []);
     canWriteNow = canWrite && !archive && dataLoaded;
@@ -1213,6 +1264,26 @@
     var itemId = el.getAttribute("data-item");
 
     switch (action) {
+      case "gate-submit": {
+        if (gatePasscode == null) {
+          gateError = "서버에 연결하는 중입니다. 잠시 후 다시 시도해 주세요.";
+          render();
+          break;
+        }
+        var pass = (document.getElementById("gate-input") || {}).value || "";
+        if (pass === String(gatePasscode)) {
+          gateOk = true;
+          gateError = "";
+          try { localStorage.setItem("wpb_gate_ok", "1"); } catch (e) {}
+          render();
+        } else {
+          gateError = "비밀번호가 올바르지 않습니다.";
+          render();
+          var gateInp = document.getElementById("gate-input");
+          if (gateInp) gateInp.focus();
+        }
+        break;
+      }
       case "change-name": {
         ui.myName = "";
         render();
@@ -1487,6 +1558,11 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
     var el = e.target;
+    if (el.id === "gate-input") {
+      e.preventDefault();
+      document.querySelector('[data-action="gate-submit"]').click();
+      return;
+    }
     if (el.id && el.id.indexOf("ai-sched-") === 0) {
       var msc = el.id.match(/^ai-sched-(.+)-(status|issues)$/);
       if (msc) { e.preventDefault(); submitItem(msc[1], msc[2]); }
