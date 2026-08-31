@@ -139,6 +139,45 @@
   }
   .archive-banner-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
+  .view-switch { display: flex; gap: 4px; margin-top: 10px; }
+
+  /* ---------- leaves (휴가/출장) view ---------- */
+  .leave-toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; flex-wrap: wrap; }
+  .leave-month-label { font-size: 13.5px; font-weight: 700; }
+  .leave-cal-weekdays {
+    display: grid; grid-template-columns: repeat(7, 1fr); font-size: 11px;
+    color: var(--ink-muted); text-align: center; margin-bottom: 4px;
+  }
+  .leave-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .leave-cal-cell {
+    min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+    padding: 4px; display: flex; flex-direction: column; gap: 3px; overflow: hidden;
+  }
+  .leave-cal-empty { border: none; background: none; }
+  .leave-cal-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .leave-cal-daynum { font-size: 11px; color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
+  .leave-cal-chips { display: flex; flex-direction: column; gap: 2px; }
+  @media (max-width: 700px) {
+    .leave-cal-cell { min-height: 54px; }
+    .leave-cal-daynum { font-size: 10px; }
+  }
+  .leave-chip {
+    display: inline-block; max-width: 100%; font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
+    background: var(--good-soft); color: var(--good); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .leave-chip-trip { background: var(--warn-soft); color: var(--warn); }
+  .leave-chip-more { font-size: 10px; color: var(--ink-muted); }
+  .leave-legend { display: flex; gap: 10px; align-items: center; margin: 10px 0 4px; font-size: 12px; color: var(--ink-muted); }
+  .leave-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .leave-list-item {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px;
+  }
+  .leave-list-name { font-weight: 600; }
+  .leave-list-range { color: var(--ink-muted); font-size: 12.5px; }
+  .leave-list-memo { color: var(--ink-muted); font-size: 12.5px; }
+  .leave-list-actions { margin-left: auto; }
+
   .identity-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .identity { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-muted); }
   .identity .who { color: var(--ink); font-weight: 600; }
@@ -399,7 +438,7 @@
     body { background: #fff; color: #000; }
     .topbar { position: static; }
     .toolbar, .name-banner, .mode-banner, .activity, .new-row-form,
-    .card-actions, .text-btn, .sched-chip-empty, .toast-root { display: none !important; }
+    .card-actions, .text-btn, .sched-chip-empty, .toast-root, .view-switch { display: none !important; }
     .sched-chip { border-color: #999; color: #000; }
     .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
     .card:before { background: #999 !important; }
@@ -430,7 +469,7 @@
   "use strict";
 
   /* ================= seed / boot ================= */
-  var state = { rows: [], activity: [], archives: {}, weekOf: "", updatedAt: "" };
+  var state = { rows: [], activity: [], archives: {}, leaves: {}, weekOf: "", updatedAt: "" };
   var dataLoaded = false;
 
   var ui = {
@@ -450,7 +489,12 @@
     calendarMonth: null,  // { y, m } while calendar popover open
     viewingArchive: null, // date string while browsing a saved past snapshot
     pendingDeleteArchive: false, // true while confirming deletion of the currently-viewed archive
-    categoryPickerRow: null // row id whose category picker popover is open
+    categoryPickerRow: null, // row id whose category picker popover is open
+    view: "board",         // "board" | "leaves"
+    leavesMonth: null,     // { y, m } for the leaves calendar month being viewed
+    leaveFormOpen: false,
+    pendingDeleteLeave: {},
+    editLeave: {}           // leave id -> true while its edit form is open
   };
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
@@ -476,13 +520,18 @@
   var rowsRef = firebase.database().ref("board/rows");
   var activityRef = firebase.database().ref("board/activity");
   var archivesRef = firebase.database().ref("board/archives");
+  var leavesRef = firebase.database().ref("board/leaves");
 
   /* ================= passcode gate ================= */
   // App data only starts syncing after anonymous Firebase auth succeeds (required by the
   // DB rules); the board itself stays hidden behind a shared passcode until the visitor
   // enters the value stored in config/passcode.
+  var GATE_TTL_MS = 4 * 60 * 60 * 1000; // re-ask 4 hours after the last successful entry
   var gateOk = false;
-  try { gateOk = localStorage.getItem("wpb_gate_ok") === "1"; } catch (e) {}
+  try {
+    var gateTs = Number(localStorage.getItem("wpb_gate_ts"));
+    gateOk = !!gateTs && (Date.now() - gateTs) < GATE_TTL_MS;
+  } catch (e) {}
   var gatePasscode = null; // fetched from config/passcode once authenticated
   var gateError = "";
 
@@ -513,6 +562,11 @@
       markLoaded("archives");
     }, onDbError);
 
+    leavesRef.on("value", function (snap) {
+      state.leaves = snap.val() || {};
+      markLoaded("leaves");
+    }, onDbError);
+
     pruneOldArchives();
   }).catch(function (err) {
     gateError = "인증 연결에 실패했습니다: " + (err && err.message ? err.message : "");
@@ -535,7 +589,7 @@
     }).catch(function () { /* best-effort cleanup; ignore failures */ });
   }
 
-  var rowsLoaded = false, activityLoaded = false, archivesLoaded = false;
+  var rowsLoaded = false, activityLoaded = false, archivesLoaded = false, leavesLoaded = false;
   function onDbError(err) {
     dataLoaded = true;
     canWrite = false;
@@ -546,7 +600,8 @@
     if (which === "rows") rowsLoaded = true;
     if (which === "activity") activityLoaded = true;
     if (which === "archives") archivesLoaded = true;
-    if (!dataLoaded && rowsLoaded && activityLoaded && archivesLoaded) dataLoaded = true;
+    if (which === "leaves") leavesLoaded = true;
+    if (!dataLoaded && rowsLoaded && activityLoaded && archivesLoaded && leavesLoaded) dataLoaded = true;
     render();
   }
 
@@ -1124,7 +1179,8 @@
       document.getElementById("app").innerHTML = renderGate();
       return;
     }
-    var archive = ui.viewingArchive ? (state.archives || {})[ui.viewingArchive] : null;
+    var isLeavesView = ui.view === "leaves";
+    var archive = (!isLeavesView && ui.viewingArchive) ? (state.archives || {})[ui.viewingArchive] : null;
     var sourceRows = archive ? (archive.rows || []) : (state.rows || []);
     canWriteNow = canWrite && !archive && dataLoaded;
     var rows = filteredRows(sourceRows);
@@ -1133,16 +1189,18 @@
         '<div class="topbar-row">' +
           '<div class="brand">' +
             '<h1>주간공정회의록</h1>' +
-            '<span class="sub">' +
-              (archive
-                ? '지난 기록 <b class="num">' + escapeHtml(ui.viewingArchive) + '</b> 저장 '
-                : '기준일 <b class="num">' + escapeHtml(todayStr()) + '</b> ') +
-              '<span class="cal-anchor">' +
-                '<button class="chip-btn" type="button" data-action="toggle-calendar" title="달력에서 날짜 선택">📅</button>' +
-                renderCalendarPopover() +
-              '</span> ' +
-              (!archive ? '<button class="chip-btn" type="button" data-action="save-snapshot" title="현재 화면을 오늘 날짜로 저장">💾 저장</button>' : "") +
-            '</span>' +
+            (isLeavesView
+              ? '<span class="sub">팀원 휴가·출장 일정</span>'
+              : '<span class="sub">' +
+                  (archive
+                    ? '지난 기록 <b class="num">' + escapeHtml(ui.viewingArchive) + '</b> 저장 '
+                    : '기준일 <b class="num">' + escapeHtml(todayStr()) + '</b> ') +
+                  '<span class="cal-anchor">' +
+                    '<button class="chip-btn" type="button" data-action="toggle-calendar" title="달력에서 날짜 선택">📅</button>' +
+                    renderCalendarPopover() +
+                  '</span> ' +
+                  (!archive ? '<button class="chip-btn" type="button" data-action="save-snapshot" title="현재 화면을 오늘 날짜로 저장">💾 저장</button>' : "") +
+                '</span>') +
           '</div>' +
           '<div class="identity-group">' +
             '<div class="identity">' +
@@ -1150,9 +1208,10 @@
                 ? '이름: <span class="who">' + escapeHtml(ui.myName) + '</span> <button class="chip-btn" data-action="change-name">변경</button>'
                 : '<button class="chip-btn" data-action="change-name">이름 설정</button>') +
             '</div>' +
-            '<div class="stat-group">' + renderStat(rows) + '</div>' +
+            (!isLeavesView ? '<div class="stat-group">' + renderStat(rows) + '</div>' : '') +
           '</div>' +
         '</div>' +
+        '<div class="view-switch">' + viewTab("board", "업무 보드") + viewTab("leaves", "휴가·출장 일정") + '</div>' +
         (!ui.myName ? renderNameBanner() : "") +
         (!dataLoaded ? '<div class="mode-banner">서버에 연결하는 중입니다...</div>' : "") +
         (dataLoaded && !canWrite ? '<div class="mode-banner">서버 연결에 실패했습니다. 새로고침 해 주세요.</div>' : "") +
@@ -1168,21 +1227,27 @@
           ) : "") +
         '</div>' : "") +
       '</div>' +
-      '<div class="toolbar">' +
-        '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 이름 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
-        '<div class="tabs">' +
-          tab("all", "전체") + tab("project", "프로젝트") + tab("noncontract", "계약외") + tab("safety", "안전관리") +
+      (isLeavesView ? renderLeavesSection() : (
+        '<div class="toolbar">' +
+          '<div class="search"><input id="search-input" placeholder="Job No / 프로젝트명 / 이름 검색" value="' + escapeHtml(ui.filterText) + '"></div>' +
+          '<div class="tabs">' +
+            tab("all", "전체") + tab("project", "프로젝트") + tab("noncontract", "계약외") + tab("safety", "안전관리") +
+          '</div>' +
+          renderSortbar() +
+          (canWriteNow ? '<button class="primary-btn" data-action="new-row-toggle">+ 새 항목</button>' : "") +
         '</div>' +
-        renderSortbar() +
-        (canWriteNow ? '<button class="primary-btn" data-action="new-row-toggle">+ 새 항목</button>' : "") +
-      '</div>' +
-      renderActivity() +
-      (canWriteNow ? renderNewRowForm() : "") +
-      '<div class="board">' +
-        (rows.length ? rows.map(renderCard).join("") : '<div class="empty-hint">조건에 맞는 항목이 없습니다.</div>') +
-      '</div>';
+        renderActivity() +
+        (canWriteNow ? renderNewRowForm() : "") +
+        '<div class="board">' +
+          (rows.length ? rows.map(renderCard).join("") : '<div class="empty-hint">조건에 맞는 항목이 없습니다.</div>') +
+        '</div>'
+      ));
 
     document.getElementById("app").innerHTML = html;
+  }
+
+  function viewTab(value, label) {
+    return '<button class="tab" type="button" role="button" aria-pressed="' + (ui.view === value) + '" data-action="set-view" data-value="' + value + '">' + escapeHtml(label) + '</button>';
   }
 
   function renderCalendarPopover() {
@@ -1213,6 +1278,125 @@
         '<div class="cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>' +
         '<div class="cal-grid">' + cells + '</div>' +
         '<div class="cal-footer"><span class="cal-legend-selected"></span> 현재 기준일 · <span class="cal-dot"></span> 저장된 기록 (클릭하면 조회)</div>' +
+      '</div>'
+    );
+  }
+
+  /* ================= leaves (휴가/출장) view ================= */
+  function renderLeavesSection() {
+    if (!ui.leavesMonth) ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+    var y = ui.leavesMonth.y, m = ui.leavesMonth.m;
+    var monthStart = fmtDate(new Date(y, m, 1));
+    var monthEnd = fmtDate(new Date(y, m, daysInMonth(y, m)));
+    var entries = Object.keys(state.leaves || {}).map(function (k) {
+      return Object.assign({ id: k }, state.leaves[k]);
+    }).filter(function (e) {
+      return e.start && e.end && e.start <= monthEnd && e.end >= monthStart;
+    }).sort(function (a, b) {
+      return a.start.localeCompare(b.start) || String(a.name || "").localeCompare(String(b.name || ""), "ko");
+    });
+
+    var total = daysInMonth(y, m);
+    var startWeekday = firstWeekday(y, m);
+    var todayVal = todayStr();
+    var cells = "";
+    for (var i = 0; i < startWeekday; i++) cells += '<div class="leave-cal-cell leave-cal-empty"></div>';
+    for (var d = 1; d <= total; d++) {
+      var dateStr = fmtDate(new Date(y, m, d));
+      var dayEntries = entries.filter(function (e) { return e.start <= dateStr && e.end >= dateStr; });
+      var chipsHtml = dayEntries.slice(0, 3).map(function (e) {
+        var label = escapeHtml(e.name) + (e.type === "trip" && e.memo ? ' · ' + escapeHtml(e.memo) : '');
+        var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : "휴가") + ')' + (e.memo ? ' - ' + escapeHtml(e.memo) : '');
+        return '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '" title="' + titleText + '">' + label + '</span>';
+      }).join("");
+      var moreHtml = dayEntries.length > 3 ? '<span class="leave-chip-more">+' + (dayEntries.length - 3) + '</span>' : "";
+      cells += '<div class="leave-cal-cell' + (dateStr === todayVal ? ' leave-cal-today' : '') + '">' +
+        '<div class="leave-cal-daynum">' + d + '</div>' +
+        '<div class="leave-cal-chips">' + chipsHtml + moreHtml + '</div>' +
+      '</div>';
+    }
+
+    var listHtml = entries.length
+      ? entries.map(renderLeaveListItem).join("")
+      : '<div class="empty-hint">이번 달 등록된 휴가·출장 일정이 없습니다.</div>';
+
+    return (
+      '<div class="leave-toolbar">' +
+        '<button type="button" class="icon-btn" data-action="leaves-prev-month">◀</button>' +
+        '<span class="leave-month-label num">' + y + '년 ' + (m + 1) + '월</span>' +
+        '<button type="button" class="icon-btn" data-action="leaves-next-month">▶</button>' +
+        (canWriteNow ? '<button class="primary-btn" type="button" data-action="leave-form-toggle" style="margin-left:auto">+ 일정 추가</button>' : "") +
+      '</div>' +
+      (canWriteNow ? renderLeaveForm() : "") +
+      '<div class="leave-cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>' +
+      '<div class="leave-cal-grid">' + cells + '</div>' +
+      '<div class="leave-legend"><span class="leave-chip leave-chip-vacation">휴가</span><span class="leave-chip leave-chip-trip">출장</span></div>' +
+      '<h4 class="col-head" style="margin-top:18px">이번 달 일정 목록</h4>' +
+      '<div class="leave-list">' + listHtml + '</div>'
+    );
+  }
+
+  function renderLeaveListItem(e) {
+    if (canWriteNow && ui.editLeave[e.id]) return renderLeaveEditForm(e);
+    var pending = !!ui.pendingDeleteLeave[e.id];
+    return (
+      '<div class="leave-list-item">' +
+        '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span>' +
+        '<span class="leave-list-name">' + escapeHtml(e.name) + '</span>' +
+        '<span class="leave-list-range num">' + escapeHtml(e.start) + (e.end !== e.start ? ' ~ ' + escapeHtml(e.end) : '') + '</span>' +
+        (e.memo ? '<span class="leave-list-memo">' + escapeHtml(e.memo) + '</span>' : '') +
+        (canWriteNow ? (
+          '<span class="leave-list-actions">' +
+            '<button class="icon-btn" title="수정" data-action="edit-leave-toggle" data-id="' + e.id + '">✎</button>' +
+            (pending
+              ? '<button class="danger-confirm" data-action="delete-leave-confirm" data-id="' + e.id + '">삭제 확정</button><button class="icon-btn" title="취소" data-action="delete-leave-cancel" data-id="' + e.id + '">↩</button>'
+              : '<button class="icon-btn" title="삭제" data-action="delete-leave" data-id="' + e.id + '">✕</button>') +
+          '</span>'
+        ) : '') +
+      '</div>'
+    );
+  }
+
+  function renderLeaveEditForm(e) {
+    return (
+      '<div class="new-row-form">' +
+        '<div class="grid-fields">' +
+          field("이름", '<input id="le-name-' + e.id + '" value="' + escapeHtml(e.name) + '">') +
+          field("시작일", '<input id="le-start-' + e.id + '" type="date" value="' + escapeHtml(e.start) + '">') +
+          field("종료일", '<input id="le-end-' + e.id + '" type="date" value="' + escapeHtml(e.end) + '">') +
+        '</div>' +
+        '<div class="radio-row">' +
+          '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (e.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
+          '<label><input type="radio" name="le-type-' + e.id + '" value="trip"' + (e.type === "trip" ? " checked" : "") + '> 출장</label>' +
+        '</div>' +
+        field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(e.memo || "") + '">') +
+        '<div class="form-actions">' +
+          '<button class="ghost-btn" data-action="edit-leave-cancel" data-id="' + e.id + '" type="button">취소</button>' +
+          '<button class="primary-btn" data-action="edit-leave-save" data-id="' + e.id + '" type="button">저장</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderLeaveForm() {
+    if (!ui.leaveFormOpen) return "";
+    var todayVal = todayStr();
+    return (
+      '<div class="new-row-form">' +
+        '<div class="grid-fields">' +
+          field("이름", '<input id="lf-name" placeholder="이름" value="' + escapeHtml(whoAmI()) + '">') +
+          field("시작일", '<input id="lf-start" type="date" value="' + todayVal + '">') +
+          field("종료일", '<input id="lf-end" type="date" value="' + todayVal + '">') +
+        '</div>' +
+        '<div class="radio-row">' +
+          '<label><input type="radio" name="lf-type" value="vacation" checked> 휴가</label>' +
+          '<label><input type="radio" name="lf-type" value="trip"> 출장</label>' +
+        '</div>' +
+        field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장">') +
+        '<div class="form-actions">' +
+          '<button class="ghost-btn" data-action="leave-form-cancel" type="button">취소</button>' +
+          '<button class="primary-btn" data-action="leave-form-submit" type="button">추가</button>' +
+        '</div>' +
       '</div>'
     );
   }
@@ -1274,7 +1458,7 @@
         if (pass === String(gatePasscode)) {
           gateOk = true;
           gateError = "";
-          try { localStorage.setItem("wpb_gate_ok", "1"); } catch (e) {}
+          try { localStorage.setItem("wpb_gate_ts", String(Date.now())); } catch (e) {}
           render();
         } else {
           gateError = "비밀번호가 올바르지 않습니다.";
@@ -1298,6 +1482,17 @@
         ui.myName = val;
         try { localStorage.setItem("wpb_myname", val); } catch (e) {}
         render();
+        break;
+      }
+      case "set-view": {
+        var newView = el.getAttribute("data-value");
+        if (ui.view !== newView) {
+          ui.view = newView;
+          if (newView === "leaves" && !ui.leavesMonth) {
+            ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+          }
+          render();
+        }
         break;
       }
       case "set-filter-cat":
@@ -1385,6 +1580,95 @@
         });
         pushActivity(whoAmI() + "님이 " + deletedDate + " 저장 기록을 삭제했습니다.");
         toast(deletedDate + " 저장 기록을 삭제했습니다.");
+        render();
+        break;
+      }
+      case "leaves-prev-month": {
+        ui.leavesMonth.m -= 1;
+        if (ui.leavesMonth.m < 0) { ui.leavesMonth.m = 11; ui.leavesMonth.y -= 1; }
+        render();
+        break;
+      }
+      case "leaves-next-month": {
+        ui.leavesMonth.m += 1;
+        if (ui.leavesMonth.m > 11) { ui.leavesMonth.m = 0; ui.leavesMonth.y += 1; }
+        render();
+        break;
+      }
+      case "leave-form-toggle":
+        ui.leaveFormOpen = !ui.leaveFormOpen;
+        render();
+        break;
+      case "leave-form-cancel":
+        ui.leaveFormOpen = false;
+        render();
+        break;
+      case "leave-form-submit": {
+        var lfName = ((document.getElementById("lf-name") || {}).value || "").trim();
+        var lfStart = (document.getElementById("lf-start") || {}).value || "";
+        var lfEnd = (document.getElementById("lf-end") || {}).value || "";
+        var lfMemo = ((document.getElementById("lf-memo") || {}).value || "").trim();
+        var lfType = (document.querySelector('input[name="lf-type"]:checked') || {}).value || "vacation";
+        if (!lfName) { toast("이름을 입력해 주세요."); return; }
+        if (!lfStart || !lfEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
+        if (lfEnd < lfStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
+        ui.leaveFormOpen = false;
+        render();
+        leavesRef.push({
+          name: lfName, type: lfType, start: lfStart, end: lfEnd, memo: lfMemo,
+          createdAt: nowIso(), createdBy: whoAmI()
+        }).then(function () {
+          pushActivity(whoAmI() + "님이 " + lfName + "의 " + (lfType === "trip" ? "출장" : "휴가") + " 일정(" + lfStart + (lfEnd !== lfStart ? "~" + lfEnd : "") + ")을 등록했습니다.");
+        }).catch(function (err) {
+          toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+        });
+        break;
+      }
+      case "edit-leave-toggle":
+        ui.editLeave[id] = !ui.editLeave[id];
+        render();
+        break;
+      case "edit-leave-cancel":
+        ui.editLeave[id] = false;
+        render();
+        break;
+      case "edit-leave-save": {
+        var leName = ((document.getElementById("le-name-" + id) || {}).value || "").trim();
+        var leStart = (document.getElementById("le-start-" + id) || {}).value || "";
+        var leEnd = (document.getElementById("le-end-" + id) || {}).value || "";
+        var leMemo = ((document.getElementById("le-memo-" + id) || {}).value || "").trim();
+        var leType = (document.querySelector('input[name="le-type-' + id + '"]:checked') || {}).value || "vacation";
+        if (!leName) { toast("이름을 입력해 주세요."); return; }
+        if (!leStart || !leEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
+        if (leEnd < leStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
+        ui.editLeave[id] = false;
+        render();
+        leavesRef.child(id).update({
+          name: leName, type: leType, start: leStart, end: leEnd, memo: leMemo
+        }).then(function () {
+          pushActivity(whoAmI() + "님이 " + leName + "의 휴가·출장 일정을 수정했습니다.");
+        }).catch(function (err) {
+          toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+        });
+        break;
+      }
+      case "delete-leave":
+        ui.pendingDeleteLeave[id] = true;
+        render();
+        setTimeout(function () { if (ui.pendingDeleteLeave[id]) { ui.pendingDeleteLeave[id] = false; render(); } }, 4000);
+        break;
+      case "delete-leave-cancel":
+        ui.pendingDeleteLeave[id] = false;
+        render();
+        break;
+      case "delete-leave-confirm": {
+        var delEntry = (state.leaves || {})[id];
+        ui.pendingDeleteLeave[id] = false;
+        leavesRef.child(id).remove().then(function () {
+          if (delEntry) pushActivity(whoAmI() + "님이 " + delEntry.name + "의 일정을 삭제했습니다.");
+        }).catch(function (err) {
+          toast("삭제에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+        });
         render();
         break;
       }
