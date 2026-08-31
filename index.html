@@ -249,6 +249,9 @@
   .tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #04211d; font-weight: 600; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tab[aria-pressed="true"] { color: #04211d; } }
   :root[data-theme="dark"] .tab[aria-pressed="true"] { color: #04211d; }
+  .view-switch .tab[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .view-switch .tab[aria-pressed="true"] { color: var(--accent-strong); } }
+  :root[data-theme="dark"] .view-switch .tab[aria-pressed="true"] { color: var(--accent-strong); }
 
   .sortbar { display: flex; align-items: center; gap: 6px; }
   .sort-label { font-size: 11px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; }
