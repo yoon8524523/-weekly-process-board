@@ -165,7 +165,9 @@
   .date-field-btn:hover { border-color: var(--accent); }
   .leave-cal-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .leave-cal-daynum-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
-  .leave-cal-daynum { font-size: 11px; color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; flex-shrink: 0; }
+  .leave-cal-daynum { font-size: 11px; color: var(--ink); font-family: "IBM Plex Mono", monospace; flex-shrink: 0; }
+  .leave-cal-sun { color: var(--danger); }
+  .leave-cal-sat { color: var(--ink-muted); }
   .leave-cal-holiday { color: var(--danger); font-weight: 700; }
   .leave-cal-holiday-label {
     font-size: 9px; color: var(--danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
@@ -1504,10 +1506,12 @@
       }).join("");
       var moreHtml = dayEntries.length > 3 ? '<span class="leave-chip-more">+' + (dayEntries.length - 3) + '</span>' : "";
       var holidayName = monthHolidays[dateStr];
+      var dow = new Date(y, m, d).getDay();
+      var daynumClass = holidayName ? " leave-cal-holiday" : (dow === 0 ? " leave-cal-sun" : dow === 6 ? " leave-cal-sat" : "");
       cells += '<div class="leave-cal-cell' + (dateStr === todayVal ? ' leave-cal-today' : '') + (canWriteNow ? ' leave-cal-clickable' : '') + '"' +
         (canWriteNow ? ' role="button" tabindex="0" data-action="leave-day-click" data-date="' + dateStr + '" title="' + dateStr + (holidayName ? ' (' + escapeHtml(holidayName) + ')' : '') + ' 일정 추가"' : '') + '>' +
         '<div class="leave-cal-daynum-row">' +
-          '<span class="leave-cal-daynum' + (holidayName ? ' leave-cal-holiday' : '') + '">' + d + '</span>' +
+          '<span class="leave-cal-daynum' + daynumClass + '">' + d + '</span>' +
           (holidayName ? '<span class="leave-cal-holiday-label" title="' + escapeHtml(holidayName) + '">' + escapeHtml(holidayName) + '</span>' : '') +
         '</div>' +
         '<div class="leave-cal-chips">' + chipsHtml + moreHtml + '</div>' +
@@ -1526,7 +1530,7 @@
         (canWriteNow ? '<button class="primary-btn" type="button" data-action="leave-form-toggle" style="margin-left:auto">+ 일정 추가</button>' : "") +
       '</div>' +
       (canWriteNow ? renderLeaveForm() : "") +
-      '<div class="leave-cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>' +
+      '<div class="leave-cal-weekdays"><span class="leave-cal-sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="leave-cal-sat">토</span></div>' +
       '<div class="leave-cal-grid">' + cells + '</div>' +
       '<div class="leave-legend"><span class="leave-chip leave-chip-vacation">휴가</span><span class="leave-chip leave-chip-trip">출장</span></div>' +
       '<h4 class="col-head" style="margin-top:18px">이번 달 일정 목록</h4>' +
