@@ -164,11 +164,17 @@
   }
   .date-field-btn:hover { border-color: var(--accent); }
   .leave-cal-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
-  .leave-cal-daynum { font-size: 11px; color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
+  .leave-cal-daynum-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+  .leave-cal-daynum { font-size: 11px; color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; flex-shrink: 0; }
+  .leave-cal-holiday { color: var(--danger); font-weight: 700; }
+  .leave-cal-holiday-label {
+    font-size: 9px; color: var(--danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
   .leave-cal-chips { display: flex; flex-direction: column; gap: 2px; }
   @media (max-width: 700px) {
     .leave-cal-cell { min-height: 54px; }
     .leave-cal-daynum { font-size: 10px; }
+    .leave-cal-holiday-label { display: none; }
   }
   .leave-chip {
     display: inline-block; max-width: 100%; font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
@@ -464,6 +470,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/korean-lunar-calendar@0.4.0/dist/korean-lunar-calendar.min.js"></script>
 <script>
   var firebaseConfig = {
   "apiKey": "AIzaSyD4koISFljzWoC8soWJhXr3U2l5BkWkGmU",
@@ -1364,6 +1371,110 @@
     );
   }
 
+  // 대한민국 법정공휴일 — 관공서의 공휴일에 관한 규정(2023년 개정, 대체공휴일 적용대상 확대판) 기준으로
+  // 매년 자동 계산됨. 설날·추석·부처님오신날은 korean-lunar-calendar 라이브러리(KASI 데이터 기반, 1000~2050년
+  // 지원)로 음력->양력 변환. 선거일처럼 법으로 자동 계산할 수 없는 임시공휴일만 HOLIDAY_OVERRIDES에 수동으로
+  // 추가해야 함. 대체공휴일 규칙은 여러 번 개정된 이력이 있어(2021, 2023) 향후 재개정 가능성에 유의.
+  var HOLIDAY_OVERRIDES = {
+    "2026-06-03": "지방선거일"
+  };
+  var HOLIDAY_SAT_SUN_SUBSTITUTE = ["삼일절", "어린이날", "부처님오신날", "제헌절", "광복절", "개천절", "한글날", "크리스마스"];
+  var holidayCache = {};
+
+  function nextFreeWeekday(fromDateStr, map) {
+    var d = parseDateStr(fromDateStr);
+    d.setDate(d.getDate() + 1);
+    for (var i = 0; i < 14; i++) {
+      var dow = d.getDay();
+      var ds = fmtDate(d);
+      if (dow !== 0 && dow !== 6 && !map[ds]) return ds;
+      d.setDate(d.getDate() + 1);
+    }
+    return null;
+  }
+
+  function lunarToSolarStr(ly, lm, ld) {
+    try {
+      var cal = new KoreanLunarCalendar();
+      cal.setLunarDate(ly, lm, ld, false);
+      var s = cal.getSolarCalendar();
+      return fmtDate(new Date(s.year, s.month - 1, s.day));
+    } catch (e) { return null; }
+  }
+
+  function holidaysForYear(y) {
+    if (holidayCache[y]) return holidayCache[y];
+    var map = {};
+    function add(m, d, name) { map[fmtDate(new Date(y, m - 1, d))] = name; }
+
+    add(1, 1, "신정");
+    add(3, 1, "삼일절");
+    add(5, 5, "어린이날");
+    add(6, 6, "현충일");
+    if (y >= 2026) add(7, 17, "제헌절"); // 2026년부터 19년 만에 법정공휴일로 재지정
+    add(8, 15, "광복절");
+    add(10, 3, "개천절");
+    add(10, 9, "한글날");
+    add(12, 25, "크리스마스");
+
+    var seollal = lunarToSolarStr(y, 1, 1);
+    if (seollal) {
+      var sd = parseDateStr(seollal);
+      var sPrev = new Date(sd); sPrev.setDate(sPrev.getDate() - 1);
+      var sNext = new Date(sd); sNext.setDate(sNext.getDate() + 1);
+      map[fmtDate(sPrev)] = "설날 연휴";
+      map[seollal] = "설날";
+      map[fmtDate(sNext)] = "설날 연휴";
+    }
+
+    var chuseok = lunarToSolarStr(y, 8, 15);
+    if (chuseok) {
+      var cd = parseDateStr(chuseok);
+      var cPrev = new Date(cd); cPrev.setDate(cPrev.getDate() - 1);
+      var cNext = new Date(cd); cNext.setDate(cNext.getDate() + 1);
+      map[fmtDate(cPrev)] = "추석 연휴";
+      map[chuseok] = "추석";
+      map[fmtDate(cNext)] = "추석 연휴";
+    }
+
+    var buddha = lunarToSolarStr(y, 4, 8);
+    if (buddha) map[buddha] = "부처님오신날";
+
+    Object.keys(HOLIDAY_OVERRIDES).forEach(function (ds) {
+      if (ds.indexOf(y + "-") === 0) map[ds] = HOLIDAY_OVERRIDES[ds];
+    });
+
+    // 대체공휴일: 단일 날짜 공휴일이 토/일과 겹치면 다음 평일(비공휴일)로 대체
+    var additions = {};
+    Object.keys(map).forEach(function (ds) {
+      var name = map[ds];
+      if (HOLIDAY_SAT_SUN_SUBSTITUTE.indexOf(name) === -1) return;
+      var dow = parseDateStr(ds).getDay();
+      if (dow !== 0 && dow !== 6) return;
+      var sub = nextFreeWeekday(ds, map);
+      if (sub) additions[sub] = name + " 대체";
+    });
+    // 설날/추석 연휴(3일)는 그 안에 일요일이 낀 경우에만 대체 (토요일 겹침은 대체 없음)
+    [["설날 연휴", "설날"], ["추석 연휴", "추석"]].forEach(function (pair) {
+      var mainName = pair[1];
+      var mainDate = Object.keys(map).filter(function (k) { return map[k] === mainName; })[0];
+      if (!mainDate) return;
+      var center = parseDateStr(mainDate);
+      var span = [-1, 0, 1].map(function (off) {
+        var d = new Date(center); d.setDate(d.getDate() + off); return fmtDate(d);
+      });
+      var overlapsSunday = span.some(function (ds) { return parseDateStr(ds).getDay() === 0; });
+      if (overlapsSunday) {
+        var sub = nextFreeWeekday(span[2], map);
+        if (sub) additions[sub] = mainName + " 대체";
+      }
+    });
+    Object.keys(additions).forEach(function (k) { if (!map[k]) map[k] = additions[k]; });
+
+    holidayCache[y] = map;
+    return map;
+  }
+
   function renderLeavesSection() {
     if (!ui.leavesMonth) ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
     var y = ui.leavesMonth.y, m = ui.leavesMonth.m;
@@ -1380,6 +1491,7 @@
     var total = daysInMonth(y, m);
     var startWeekday = firstWeekday(y, m);
     var todayVal = todayStr();
+    var monthHolidays = holidaysForYear(y);
     var cells = "";
     for (var i = 0; i < startWeekday; i++) cells += '<div class="leave-cal-cell leave-cal-empty"></div>';
     for (var d = 1; d <= total; d++) {
@@ -1391,9 +1503,13 @@
         return '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '" title="' + titleText + '">' + label + '</span>';
       }).join("");
       var moreHtml = dayEntries.length > 3 ? '<span class="leave-chip-more">+' + (dayEntries.length - 3) + '</span>' : "";
+      var holidayName = monthHolidays[dateStr];
       cells += '<div class="leave-cal-cell' + (dateStr === todayVal ? ' leave-cal-today' : '') + (canWriteNow ? ' leave-cal-clickable' : '') + '"' +
-        (canWriteNow ? ' role="button" tabindex="0" data-action="leave-day-click" data-date="' + dateStr + '" title="' + dateStr + ' 일정 추가"' : '') + '>' +
-        '<div class="leave-cal-daynum">' + d + '</div>' +
+        (canWriteNow ? ' role="button" tabindex="0" data-action="leave-day-click" data-date="' + dateStr + '" title="' + dateStr + (holidayName ? ' (' + escapeHtml(holidayName) + ')' : '') + ' 일정 추가"' : '') + '>' +
+        '<div class="leave-cal-daynum-row">' +
+          '<span class="leave-cal-daynum' + (holidayName ? ' leave-cal-holiday' : '') + '">' + d + '</span>' +
+          (holidayName ? '<span class="leave-cal-holiday-label" title="' + escapeHtml(holidayName) + '">' + escapeHtml(holidayName) + '</span>' : '') +
+        '</div>' +
         '<div class="leave-cal-chips">' + chipsHtml + moreHtml + '</div>' +
       '</div>';
     }
