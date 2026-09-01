@@ -763,6 +763,18 @@
       function (el) { return el.value; }
     );
   }
+
+  // only rows without a parent of their own can be picked, keeping parent/child nesting to 1 level
+  function renderParentSelect(selectId, selectedParentId, excludeRowId) {
+    var options = state.rows
+      .filter(function (r) { return !r.parentId && r.id !== excludeRowId; })
+      .map(function (r) {
+        var label = firstLine(r.name) + (r.jobNo ? " (Job No. " + r.jobNo + ")" : "");
+        return '<option value="' + r.id + '"' + (r.id === selectedParentId ? " selected" : "") + '>' + escapeHtml(label) + '</option>';
+      }).join("");
+    return '<select id="' + selectId + '"><option value="">없음</option>' + options + '</select>';
+  }
+
   function renderCategoryPicker(row) {
     var options = CATEGORY_OPTIONS.map(function (c) {
       var selected = row.category === c[0];
@@ -833,7 +845,33 @@
       var cmp = compareBy(key, a.r, b.r) * dir;
       return cmp !== 0 ? cmp : a.i - b.i; // stable: fall back to original order
     });
-    return withIndex.map(function (x) { return x.r; });
+    return groupChildrenAfterParents(withIndex.map(function (x) { return x.r; }));
+  }
+
+  // pulls each row with a parentId right after its parent (only 1 level deep — a row that is
+  // itself someone's child can't also be a parent, enforced when the parent picker is populated),
+  // keeping the parent's normal sort position and the children's relative order among themselves.
+  // a child whose parent got filtered out of `sorted`, or sits in a different category, is left
+  // in its normal sorted position instead (grouping would otherwise jump across category groups).
+  function groupChildrenAfterParents(sorted) {
+    var byId = {};
+    sorted.forEach(function (r) { byId[r.id] = r; });
+    var childrenOf = {};
+    sorted.forEach(function (r) {
+      var parent = r.parentId && byId[r.parentId];
+      if (parent && parent.category === r.category) {
+        (childrenOf[parent.id] = childrenOf[parent.id] || []).push(r);
+      }
+    });
+    var result = [];
+    sorted.forEach(function (r) {
+      var parent = r.parentId && byId[r.parentId];
+      var isGroupedChild = parent && parent.category === r.category;
+      if (isGroupedChild) return; // appended right after its parent below instead
+      result.push(r);
+      (childrenOf[r.id] || []).forEach(function (c) { result.push(c); });
+    });
+    return result;
   }
 
   function renderStat(rows) {
@@ -878,6 +916,7 @@
           '<label><input type="radio" name="nr-cat" value="safety"> 안전관리</label>' +
         '</div>' +
         plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", []) + '</div>') +
+        field("상위 프로젝트 (선택)", renderParentSelect("nr-parent", null, null)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="new-row-cancel" type="button">취소</button>' +
           '<button class="primary-btn" data-action="new-row-submit" type="button">추가</button>' +
@@ -913,6 +952,7 @@
         '</div>' +
         field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
         plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, row.depts || []) + '</div>') +
+        field("상위 프로젝트 (선택)", renderParentSelect("er-parent-" + row.id, row.parentId || null, row.id)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-row-cancel" data-id="' + row.id + '" type="button">취소</button>' +
           '<button class="primary-btn" data-action="edit-row-save" data-id="' + row.id + '" type="button">저장</button>' +
@@ -929,6 +969,10 @@
               : '<span class="badge">' + categoryLabel(row.category) + '</span>') +
             (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
             ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
+            (function () {
+              var parent = row.parentId && state.rows.find(function (r) { return r.id === row.parentId; });
+              return parent ? '<span class="job-no">↳ 상위: ' + escapeHtml(firstLine(parent.name)) + '</span>' : '';
+            })() +
           '</div>' +
           '<div class="card-actions">' +
             ((row.depts || []).length
@@ -1986,6 +2030,7 @@
           manager: (document.getElementById("nr-manager") || {}).value || "",
           poDel: (document.getElementById("nr-podel") || {}).value || "",
           depts: readCheckedDepts("nr"),
+          parentId: (document.getElementById("nr-parent") || {}).value || null,
           status: [], issues: [],
           createdAt: nowIso(), updatedAt: nowIso()
         };
@@ -2010,7 +2055,8 @@
           jobNo: g("jobno"), qty: g("qty"), manager: g("manager"),
           poDel: g("podel"),
           name: g("name"),
-          depts: readCheckedDepts("er-" + id)
+          depts: readCheckedDepts("er-" + id),
+          parentId: g("parent") || null
         };
         ui.editRow[id] = false;
         commit(function () {
