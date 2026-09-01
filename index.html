@@ -1560,7 +1560,6 @@
         '<button type="button" class="icon-btn" data-action="leaves-prev-month">◀</button>' +
         '<span class="leave-month-label num">' + y + '년 ' + (m + 1) + '월</span>' +
         '<button type="button" class="icon-btn" data-action="leaves-next-month">▶</button>' +
-        (canWriteNow ? '<button class="primary-btn" type="button" data-action="leave-form-toggle" style="margin-left:auto">+ 일정 추가</button>' : "") +
       '</div>' +
       (canWriteNow ? renderLeaveForm() : "") +
       '<div class="leave-cal-weekdays"><span class="leave-cal-sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="leave-cal-sat">토</span></div>' +
@@ -1832,13 +1831,6 @@
         render();
         break;
       }
-      case "leave-form-toggle":
-        ui.leaveFormOpen = !ui.leaveFormOpen;
-        ui.leaveFormDate = null;
-        ui.leaveFormDraft = null;
-        if (ui.datePicker && ui.datePicker.scope === "add") ui.datePicker = null;
-        render();
-        break;
       case "leave-day-click": {
         ui.leaveFormOpen = true;
         ui.leaveFormDate = el.getAttribute("data-date");
