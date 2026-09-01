@@ -366,7 +366,7 @@
   .cat-option:hover { background: var(--surface-2); }
   .cat-option-selected { font-weight: 700; color: var(--accent-strong); }
   .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
-  .card-title { grid-column: 1; grid-row: 2; min-width: 0; font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
+  .card-title { grid-column: 1; grid-row: 2; min-width: 0; font-size: 16px; font-weight: 700; line-height: 1.25; white-space: pre-line; text-wrap: balance; }
   .issue-flag {
     font-size: 11px; font-weight: 700; background: var(--warn-soft); color: var(--warn);
     padding: 2px 8px; border-radius: 999px;
@@ -387,7 +387,7 @@
     .card-title { grid-row: 3; }
     .meta-row { grid-row: 4; flex-direction: column; gap: 2px; align-items: flex-end; justify-self: stretch; }
   }
-  .updated-at { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
+  .updated-at { font-size: 11px; color: var(--ink-muted); line-height: 1.2; margin-top: 0; }
 
   .edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
 
@@ -409,16 +409,16 @@
     color: var(--ink-muted); font-weight: 700;
   }
   .item-cell {
-    display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; background: var(--surface-2);
+    display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; background: var(--surface-2);
     border: 1px solid var(--line);
     border-radius: 8px; font-size: 13px; min-width: 0;
   }
   .item-cell.issues { background: var(--danger-soft); border-color: var(--danger-soft); }
   .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .item-text { flex: 1; white-space: pre-line; font-weight: 500; color: var(--ink); }
+  .item-text { flex: 1; white-space: pre-line; font-weight: 500; line-height: 1.3; color: var(--ink); }
   .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .item-footer-indent { padding-left: 24px; } /* lines up with .item-text, which sits right of the .drag-handle above it */
-  .item-meta { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
+  .item-meta { font-size: 11px; color: var(--ink-muted); line-height: 1; white-space: nowrap; }
   .item-actions { display: flex; gap: 4px; flex-shrink: 0; }
   .empty-hint { font-size: 11px; color: var(--ink-muted); opacity: 0.65; padding: 6px 2px; font-style: italic; }
   .drag-handle {
