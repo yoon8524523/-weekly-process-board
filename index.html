@@ -915,7 +915,7 @@
           '<label><input type="radio" name="nr-cat" value="noncontract"> 계약외</label>' +
           '<label><input type="radio" name="nr-cat" value="safety"> 안전관리</label>' +
         '</div>' +
-        plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", []) + '</div>') +
+        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", []) + '</div>') +
         field("상위 프로젝트 (선택)", renderParentSelect("nr-parent", null, null)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="new-row-cancel" type="button">취소</button>' +
@@ -951,7 +951,7 @@
           field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(row.poDel) + '">') +
         '</div>' +
         field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
-        plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, row.depts || []) + '</div>') +
+        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, row.depts || []) + '</div>') +
         field("상위 프로젝트 (선택)", renderParentSelect("er-parent-" + row.id, row.parentId || null, row.id)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-row-cancel" data-id="' + row.id + '" type="button">취소</button>' +
