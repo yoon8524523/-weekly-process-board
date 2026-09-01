@@ -322,8 +322,9 @@
     background: var(--surface-2); color: var(--ink); font-size: 13.5px; font-family: inherit;
   }
   .field textarea { resize: vertical; min-height: 40px; }
+  .plain-field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
-  .radio-row { display: flex; gap: 14px; align-items: center; font-size: 13px; }
+  .radio-row { display: flex; gap: 14px; align-items: center; font-size: 13px; flex-wrap: wrap; }
   .radio-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 
   /* ---------- cards ---------- */
@@ -339,8 +340,11 @@
   .card.safety:before { background: var(--warn); }
   .card.noncontract:before { background: var(--ink-muted); }
   .card-head { padding: 14px 16px 12px 20px; border-bottom: 1px solid var(--line); }
-  .card-head-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-  .card-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* 2-column grid: left column (title-row / title) grows, right column (actions-row / meta-row)
+     is a shared track so both rows line up on the same right edge instead of each having its
+     own independently-sized box. */
+  .card-head-top { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 4px; align-items: start; }
+  .card-title-row { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .badge {
     font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 8px; border-radius: 999px;
     background: var(--accent-soft); color: var(--accent-strong);
@@ -362,18 +366,26 @@
   .cat-option:hover { background: var(--surface-2); }
   .cat-option-selected { font-weight: 700; color: var(--accent-strong); }
   .job-no { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 12px; }
-  .card-head-main { flex: 1; min-width: 0; }
-  .title-meta-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .card-title { font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
+  .card-title { grid-column: 1; grid-row: 2; min-width: 0; font-size: 16px; font-weight: 700; white-space: pre-line; text-wrap: balance; }
   .issue-flag {
     font-size: 11px; font-weight: 700; background: var(--warn-soft); color: var(--warn);
     padding: 2px 8px; border-radius: 999px;
   }
-  .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-  .meta-row { display: flex; flex-wrap: wrap; gap: 3px 18px; font-size: 12.5px; color: var(--ink-muted); flex-shrink: 0; }
+  .card-actions { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .dept-badges { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .dept-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-strong);
+  }
+  .meta-row { grid-column: 2; grid-row: 2; justify-self: end; display: flex; flex-wrap: wrap; gap: 3px 18px; font-size: 12.5px; color: var(--ink-muted); }
   .meta-row b { color: var(--ink); font-weight: 600; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
   @media (max-width: 560px) {
-    .meta-row { flex-direction: column; gap: 2px; align-items: flex-end; }
+    .card-head-top { grid-template-columns: 1fr; }
+    .card-title-row, .card-actions, .card-title, .meta-row { grid-column: 1; }
+    .card-title-row { grid-row: 1; }
+    .card-actions { grid-row: 2; justify-content: flex-start; }
+    .card-title { grid-row: 3; }
+    .meta-row { grid-row: 4; flex-direction: column; gap: 2px; align-items: flex-end; justify-self: stretch; }
   }
   .updated-at { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
 
@@ -737,6 +749,20 @@
   }
 
   var CATEGORY_OPTIONS = [["project", "프로젝트"], ["noncontract", "계약외"], ["safety", "안전관리"]];
+  var DEPT_OPTIONS = ["공정", "장치", "생산", "구매", "배관", "계전", "현장", "품질"];
+  function renderDeptCheckboxes(idPrefix, checkedDepts) {
+    return DEPT_OPTIONS.map(function (dep) {
+      var checked = checkedDepts.indexOf(dep) !== -1;
+      return '<label><input type="checkbox" name="' + idPrefix + '-dept" value="' + dep + '"' + (checked ? " checked" : "") + '> ' + dep + '</label>';
+    }).join("");
+  }
+
+  function readCheckedDepts(idPrefix) {
+    return Array.prototype.map.call(
+      document.querySelectorAll('input[name="' + idPrefix + '-dept"]:checked'),
+      function (el) { return el.value; }
+    );
+  }
   function renderCategoryPicker(row) {
     var options = CATEGORY_OPTIONS.map(function (c) {
       var selected = row.category === c[0];
@@ -851,6 +877,7 @@
           '<label><input type="radio" name="nr-cat" value="noncontract"> 계약외</label>' +
           '<label><input type="radio" name="nr-cat" value="safety"> 안전관리</label>' +
         '</div>' +
+        plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", []) + '</div>') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="new-row-cancel" type="button">취소</button>' +
           '<button class="primary-btn" data-action="new-row-submit" type="button">추가</button>' +
@@ -861,6 +888,12 @@
 
   function field(label, inputHtml) {
     return '<div class="field"><label>' + escapeHtml(label) + '</label>' + inputHtml + '</div>';
+  }
+
+  // like field(), but skips the "field" class so ".field input" (width:100%, box styling meant
+  // for text inputs) doesn't get applied to the checkboxes/radios inside inputHtml
+  function plainField(label, inputHtml) {
+    return '<div class="plain-field"><label>' + escapeHtml(label) + '</label>' + inputHtml + '</div>';
   }
 
   function renderCard(row) {
@@ -879,6 +912,7 @@
           field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(row.poDel) + '">') +
         '</div>' +
         field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
+        plainField("대응 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, row.depts || []) + '</div>') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-row-cancel" data-id="' + row.id + '" type="button">취소</button>' +
           '<button class="primary-btn" data-action="edit-row-save" data-id="' + row.id + '" type="button">저장</button>' +
@@ -886,33 +920,32 @@
     } else {
       head =
         '<div class="card-head-top">' +
-          '<div class="card-head-main">' +
-            '<div class="card-title-row">' +
-              (canWriteNow
-                ? '<span class="cat-anchor">' +
-                    '<button type="button" class="badge badge-btn" data-action="toggle-category-picker" data-id="' + row.id + '" title="클릭해서 분류 선택">' + categoryLabel(row.category) + '</button>' +
-                    (ui.categoryPickerRow === row.id ? renderCategoryPicker(row) : '') +
-                  '</span>'
-                : '<span class="badge">' + categoryLabel(row.category) + '</span>') +
-              (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
-              ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
-            '</div>' +
-            '<div class="title-meta-row">' +
-              '<div class="card-title">' + escapeHtml(row.name) + '</div>' +
-              '<div class="meta-row">' +
-                '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
-                '<span>Project Manager <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
-                '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
-              '</div>' +
-            '</div>' +
+          '<div class="card-title-row">' +
+            (canWriteNow
+              ? '<span class="cat-anchor">' +
+                  '<button type="button" class="badge badge-btn" data-action="toggle-category-picker" data-id="' + row.id + '" title="클릭해서 분류 선택">' + categoryLabel(row.category) + '</button>' +
+                  (ui.categoryPickerRow === row.id ? renderCategoryPicker(row) : '') +
+                '</span>'
+              : '<span class="badge">' + categoryLabel(row.category) + '</span>') +
+            (row.jobNo ? '<span class="job-no num">Job No. ' + escapeHtml(row.jobNo) + '</span>' : '') +
+            ((row.issues || []).length ? '<span class="issue-flag">이슈 ' + row.issues.length + '건</span>' : '') +
           '</div>' +
           '<div class="card-actions">' +
+            ((row.depts || []).length
+              ? '<div class="dept-badges">' + row.depts.map(function (d) { return '<span class="dept-badge">' + escapeHtml(d) + '</span>'; }).join("") + '</div>'
+              : '') +
             (canWriteNow ? (
               '<button class="icon-btn" title="수정" data-action="edit-row-toggle" data-id="' + row.id + '">✎</button>' +
               (pendingDel
                 ? '<button class="danger-confirm" data-action="delete-row-confirm" data-id="' + row.id + '">삭제 확정</button><button class="icon-btn" title="취소" data-action="delete-row-cancel" data-id="' + row.id + '">↩</button>'
                 : '<button class="icon-btn" title="삭제" data-action="delete-row" data-id="' + row.id + '">✕</button>')
             ) : '') +
+          '</div>' +
+          '<div class="card-title">' + escapeHtml(row.name) + '</div>' +
+          '<div class="meta-row">' +
+            '<span>수량 <b>' + escapeHtml(row.qty || "-") + '</b></span>' +
+            '<span>Project Manager <b>' + escapeHtml(row.manager || "-") + '</b></span>' +
+            '<span>PO Del. <b>' + escapeHtml(row.poDel || "-") + '</b></span>' +
           '</div>' +
         '</div>' +
         '<div class="updated-at">최근 변경 ' + timeAgo(rowLatestTs(row)) + '</div>';
@@ -1960,6 +1993,7 @@
           qty: (document.getElementById("nr-qty") || {}).value || "",
           manager: (document.getElementById("nr-manager") || {}).value || "",
           poDel: (document.getElementById("nr-podel") || {}).value || "",
+          depts: readCheckedDepts("nr"),
           status: [], issues: [],
           createdAt: nowIso(), updatedAt: nowIso()
         };
@@ -1983,7 +2017,8 @@
         var patch = {
           jobNo: g("jobno"), qty: g("qty"), manager: g("manager"),
           poDel: g("podel"),
-          name: g("name")
+          name: g("name"),
+          depts: readCheckedDepts("er-" + id)
         };
         ui.editRow[id] = false;
         commit(function () {
