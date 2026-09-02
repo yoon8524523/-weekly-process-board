@@ -151,7 +151,7 @@
   .leave-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .leave-cal-cell {
     min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
-    padding: 4px; display: flex; flex-direction: column; gap: 3px; overflow: hidden;
+    padding: 4px; display: flex; flex-direction: column; gap: 3px; overflow: visible;
   }
   .leave-cal-empty { border: none; background: none; }
   .leave-cal-clickable { cursor: pointer; }
@@ -184,6 +184,19 @@
   }
   .leave-chip-trip { background: var(--warn-soft); color: var(--warn); }
   .leave-chip-more { font-size: 10px; color: var(--ink-muted); }
+  /* multi-day bars: a bar bleeds past its own cell's padding+border, halfway into the
+     grid gap, on the sides where it continues into a neighboring day, so two adjacent
+     days' bars meet exactly in the gap and read as one connected bar. */
+  .leave-bar {
+    display: block; height: 15px; font-size: 10.5px; line-height: 13px; padding: 1px 6px;
+    background: var(--good-soft); color: var(--good); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .leave-bar-trip { background: var(--warn-soft); color: var(--warn); }
+  .leave-bar-start { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+  .leave-bar-end { border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
+  .leave-bar-bleed-left { margin-left: -7px; }
+  .leave-bar-bleed-right { margin-right: -7px; }
+  .leave-bar-spacer { height: 15px; }
   .leave-legend { display: flex; gap: 10px; align-items: center; margin: 10px 0 4px; font-size: 12px; color: var(--ink-muted); }
   .leave-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
   .leave-list-item {
@@ -1580,28 +1593,65 @@
     var startWeekday = firstWeekday(y, m);
     var todayVal = todayStr();
     var monthHolidays = holidaysForYear(y);
+    var MAX_LEAVE_LANES = 3;
+
+    // Build the visible day grid (null = leading/trailing blank cell) and chunk it into
+    // calendar weeks so multi-day entries can be assigned a consistent lane per week —
+    // that's what lets same-lane bars line up and visually bleed together across days.
+    var gridDays = [];
+    for (var i = 0; i < startWeekday; i++) gridDays.push(null);
+    for (var d = 1; d <= total; d++) gridDays.push(fmtDate(new Date(y, m, d)));
+    while (gridDays.length % 7 !== 0) gridDays.push(null);
+
     var cells = "";
-    for (var i = 0; i < startWeekday; i++) cells += '<div class="leave-cal-cell leave-cal-empty"></div>';
-    for (var d = 1; d <= total; d++) {
-      var dateStr = fmtDate(new Date(y, m, d));
-      var dayEntries = entries.filter(function (e) { return e.start <= dateStr && e.end >= dateStr; });
-      var chipsHtml = dayEntries.slice(0, 3).map(function (e) {
-        var label = escapeHtml(e.name) + (e.type === "trip" && e.memo ? ' · ' + escapeHtml(e.memo) : '');
-        var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : "휴가") + ')' + (e.memo ? ' - ' + escapeHtml(e.memo) : '');
-        return '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '" title="' + titleText + '">' + label + '</span>';
-      }).join("");
-      var moreHtml = dayEntries.length > 3 ? '<span class="leave-chip-more">+' + (dayEntries.length - 3) + '</span>' : "";
-      var holidayName = monthHolidays[dateStr];
-      var dow = new Date(y, m, d).getDay();
-      var daynumClass = holidayName ? " leave-cal-holiday" : (dow === 0 ? " leave-cal-sun" : dow === 6 ? " leave-cal-sat" : "");
-      cells += '<div class="leave-cal-cell' + (dateStr === todayVal ? ' leave-cal-today' : '') + (canWriteNow ? ' leave-cal-clickable' : '') + '"' +
-        (canWriteNow ? ' role="button" tabindex="0" data-action="leave-day-click" data-date="' + dateStr + '" title="' + dateStr + (holidayName ? ' (' + escapeHtml(holidayName) + ')' : '') + ' 일정 추가"' : '') + '>' +
-        '<div class="leave-cal-daynum-row">' +
-          '<span class="leave-cal-daynum' + daynumClass + '">' + d + '</span>' +
-          (holidayName ? '<span class="leave-cal-holiday-label" title="' + escapeHtml(holidayName) + '">' + escapeHtml(holidayName) + '</span>' : '') +
-        '</div>' +
-        '<div class="leave-cal-chips">' + chipsHtml + moreHtml + '</div>' +
-      '</div>';
+    for (var w = 0; w < gridDays.length; w += 7) {
+      (function (week) {
+        var weekEntries = entries.filter(function (e) {
+          return week.some(function (ds) { return ds && e.start <= ds && e.end >= ds; });
+        }).sort(function (a, b) {
+          return a.start.localeCompare(b.start) || b.end.localeCompare(a.end);
+        });
+        var laneEnds = [];
+        var laneOf = {};
+        weekEntries.forEach(function (e) {
+          var lane = laneEnds.findIndex(function (end) { return end < e.start; });
+          if (lane === -1) lane = laneEnds.length;
+          laneEnds[lane] = e.end;
+          laneOf[e.id] = lane;
+        });
+        var shownLanes = Math.min(laneEnds.length, MAX_LEAVE_LANES);
+
+        week.forEach(function (dateStr, colIdx) {
+          if (!dateStr) { cells += '<div class="leave-cal-cell leave-cal-empty"></div>'; return; }
+          var dayEntries = weekEntries.filter(function (e) { return e.start <= dateStr && e.end >= dateStr; });
+          var overflowCount = dayEntries.filter(function (e) { return laneOf[e.id] >= MAX_LEAVE_LANES; }).length;
+          var barsHtml = "";
+          for (var lane = 0; lane < shownLanes; lane++) {
+            var e = dayEntries.find(function (x) { return laneOf[x.id] === lane; });
+            if (!e) { barsHtml += '<div class="leave-bar-spacer"></div>'; continue; }
+            var isStart = e.start === dateStr || colIdx === 0;
+            var isEnd = e.end === dateStr || colIdx === 6;
+            var barCls = 'leave-bar leave-bar-' + (e.type === "trip" ? "trip" : "vacation") +
+              (isStart ? ' leave-bar-start' : ' leave-bar-bleed-left') +
+              (isEnd ? ' leave-bar-end' : ' leave-bar-bleed-right');
+            var label = isStart ? (escapeHtml(e.name) + (e.type === "trip" && e.memo ? ' · ' + escapeHtml(e.memo) : '')) : '';
+            var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : "휴가") + ')' + (e.memo ? ' - ' + escapeHtml(e.memo) : '');
+            barsHtml += '<span class="' + barCls + '" title="' + titleText + '">' + label + '</span>';
+          }
+          var moreHtml = overflowCount ? '<span class="leave-chip-more">+' + overflowCount + '</span>' : '';
+          var holidayName = monthHolidays[dateStr];
+          var daynumClass = holidayName ? " leave-cal-holiday" : (colIdx === 0 ? " leave-cal-sun" : colIdx === 6 ? " leave-cal-sat" : "");
+          var dayNum = Number(dateStr.slice(-2));
+          cells += '<div class="leave-cal-cell' + (dateStr === todayVal ? ' leave-cal-today' : '') + (canWriteNow ? ' leave-cal-clickable' : '') + '"' +
+            (canWriteNow ? ' role="button" tabindex="0" data-action="leave-day-click" data-date="' + dateStr + '" title="' + dateStr + (holidayName ? ' (' + escapeHtml(holidayName) + ')' : '') + ' 일정 추가"' : '') + '>' +
+            '<div class="leave-cal-daynum-row">' +
+              '<span class="leave-cal-daynum' + daynumClass + '">' + dayNum + '</span>' +
+              (holidayName ? '<span class="leave-cal-holiday-label" title="' + escapeHtml(holidayName) + '">' + escapeHtml(holidayName) + '</span>' : '') +
+            '</div>' +
+            '<div class="leave-cal-chips">' + barsHtml + moreHtml + '</div>' +
+          '</div>';
+        });
+      })(gridDays.slice(w, w + 7));
     }
 
     var listHtml = entries.length
