@@ -565,6 +565,11 @@
       ui.filterText = parsed.filterText || "";
       ui.filterCategory = parsed.filterCategory || "all";
     }
+    var savedView = localStorage.getItem("wpb_view");
+    if (savedView === "board" || savedView === "leaves") {
+      ui.view = savedView;
+      if (savedView === "leaves") ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+    }
   } catch (e) { /* storage unavailable: keep defaults */ }
 
   var canWrite = true;
@@ -1833,6 +1838,7 @@
         var newView = el.getAttribute("data-value");
         if (ui.view !== newView) {
           ui.view = newView;
+          try { localStorage.setItem("wpb_view", newView); } catch (e) {}
           if (newView === "leaves" && !ui.leavesMonth) {
             ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
           }
