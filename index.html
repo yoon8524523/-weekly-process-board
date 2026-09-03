@@ -1706,9 +1706,9 @@
     return (
       '<div class="leave-list-item">' +
         '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span>' +
-        (e.type === "trip" ? "" : '<span class="leave-list-daytype">' + dayTypeLabel(e.dayType) + '</span>') +
         '<span class="leave-list-name">' + escapeHtml(e.name) + '</span>' +
         '<span class="leave-list-range num">' + escapeHtml(e.start) + (e.end !== e.start ? ' ~ ' + escapeHtml(e.end) : '') + '</span>' +
+        (e.type === "trip" ? "" : '<span class="leave-list-daytype">' + dayTypeLabel(e.dayType) + '</span>') +
         (e.memo ? '<span class="leave-list-memo">' + escapeHtml(e.memo) + '</span>' : '') +
         (e.type === "trip" && e.departureTime ? '<span class="leave-list-daytype num">출발 ' + escapeHtml(e.departureTime) + '</span>' : '') +
         (canWriteNow ? (
