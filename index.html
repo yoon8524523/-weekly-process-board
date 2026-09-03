@@ -1742,7 +1742,9 @@
               '<label><input type="radio" name="le-daytype-' + e.id + '" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
               '<label><input type="radio" name="le-daytype-' + e.id + '" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
             '</div>')) +
-        field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(draft.memo) + '">') +
+        (draft.type === "trip"
+          ? field("출장지(필수)", '<input id="le-memo-' + e.id + '" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">')
+          : field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(draft.memo) + '">')) +
         (draft.type === "trip"
           ? field("출발 시간", '<input type="time" id="le-deptime-' + e.id + '" value="' + escapeHtml(draft.departureTime || "") + '">')
           : "") +
@@ -1774,7 +1776,9 @@
               '<label><input type="radio" name="lf-daytype" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
               '<label><input type="radio" name="lf-daytype" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
             '</div>')) +
-        field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">') +
+        (draft.type === "trip"
+          ? field("출장지(필수)", '<input id="lf-memo" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">')
+          : field("메모 (선택)", '<input id="lf-memo" value="' + escapeHtml(draft.memo) + '">')) +
         (draft.type === "trip"
           ? field("출발 시간", '<input type="time" id="lf-deptime" value="' + escapeHtml(draft.departureTime || "") + '">')
           : "") +
@@ -2009,6 +2013,7 @@
         if (!lfName) { toast("이름을 입력해 주세요."); return; }
         if (!lfStart || !lfEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
         if (lfEnd < lfStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
+        if (lfType === "trip" && !lfMemo) { toast("출장지를 입력해 주세요."); return; }
         ui.leaveFormOpen = false;
         ui.leaveFormDate = null;
         ui.leaveFormDraft = null;
@@ -2088,6 +2093,7 @@
         if (!leName) { toast("이름을 입력해 주세요."); return; }
         if (!leStart || !leEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
         if (leEnd < leStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
+        if (leType === "trip" && !leMemo) { toast("출장지를 입력해 주세요."); return; }
         ui.editLeave[id] = false;
         delete ui.editLeaveDraft[id];
         ui.datePicker = null;
