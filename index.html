@@ -204,6 +204,7 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px;
   }
   .leave-list-name { font-weight: 600; }
+  .leave-list-daytype { color: var(--ink-muted); font-size: 12.5px; }
   .leave-list-range { color: var(--ink-muted); font-size: 12.5px; }
   .leave-list-memo { color: var(--ink-muted); font-size: 12.5px; }
   .leave-list-actions { margin-left: auto; }
@@ -773,6 +774,12 @@
     if (c === "safety") return "안전관리";
     if (c === "noncontract") return "계약외";
     return "프로젝트";
+  }
+
+  function dayTypeLabel(dayType) {
+    if (dayType === "am") return "반차(오전)";
+    if (dayType === "pm") return "반차(오후)";
+    return "연차";
   }
 
   var CATEGORY_OPTIONS = [["project", "프로젝트"], ["noncontract", "계약외"], ["safety", "안전관리"]];
@@ -1424,12 +1431,13 @@
   /* ================= leaves (휴가/출장) view ================= */
   // "add" = the new-leave form (lf-*); any other scope value is a leave id being edited (le-*-<id>)
   function dateFieldIds(scope) {
-    if (scope === "add") return { name: "lf-name", start: "lf-start", end: "lf-end", memo: "lf-memo", typeName: "lf-type" };
-    return { name: "le-name-" + scope, start: "le-start-" + scope, end: "le-end-" + scope, memo: "le-memo-" + scope, typeName: "le-type-" + scope };
+    if (scope === "add") return { name: "lf-name", start: "lf-start", end: "lf-end", memo: "lf-memo", typeName: "lf-type", dayTypeName: "lf-daytype", departureTime: "lf-deptime" };
+    return { name: "le-name-" + scope, start: "le-start-" + scope, end: "le-end-" + scope, memo: "le-memo-" + scope, typeName: "le-type-" + scope, dayTypeName: "le-daytype-" + scope, departureTime: "le-deptime-" + scope };
   }
 
   // snapshots the leave form's current (possibly unsaved) field values into ui state so they
-  // survive the re-render triggered by opening/paging the date-field popover
+  // survive the re-render triggered by opening/paging the date-field popover, or by switching
+  // between 휴가/출장 (which swaps in a different sub-field and needs its own re-render).
   function captureLeaveDraft(scope) {
     var ids = dateFieldIds(scope);
     var nameEl = document.getElementById(ids.name);
@@ -1439,7 +1447,9 @@
       start: (document.getElementById(ids.start) || {}).value || todayStr(),
       end: (document.getElementById(ids.end) || {}).value || todayStr(),
       memo: (document.getElementById(ids.memo) || {}).value || "",
-      type: (document.querySelector('input[name="' + ids.typeName + '"]:checked') || {}).value || "vacation"
+      type: (document.querySelector('input[name="' + ids.typeName + '"]:checked') || {}).value || "vacation",
+      dayType: (document.querySelector('input[name="' + ids.dayTypeName + '"]:checked') || {}).value || "full",
+      departureTime: (document.getElementById(ids.departureTime) || {}).value || ""
     };
     if (scope === "add") ui.leaveFormDraft = draft; else ui.editLeaveDraft[scope] = draft;
     return draft;
@@ -1645,8 +1655,14 @@
             var barCls = 'leave-bar leave-bar-' + (e.type === "trip" ? "trip" : "vacation") +
               (isStart ? ' leave-bar-start' : ' leave-bar-bleed-left') +
               (isEnd ? ' leave-bar-end' : ' leave-bar-bleed-right');
-            var label = isStart ? (escapeHtml(e.name) + (e.type === "trip" && e.memo ? ' · ' + escapeHtml(e.memo) : '')) : '';
-            var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : "휴가") + ')' + (e.memo ? ' - ' + escapeHtml(e.memo) : '');
+            var label = isStart ? (
+              e.type === "trip"
+                ? escapeHtml(e.name) + (e.memo ? ' · ' + escapeHtml(e.memo) : '')
+                : escapeHtml(e.name) + (e.dayType && e.dayType !== "full" ? ' (' + (e.dayType === "am" ? "오전" : "오후") + ')' : '')
+            ) : '';
+            var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : dayTypeLabel(e.dayType)) + ')' +
+              (e.type === "trip" && e.departureTime ? ' · 출발 ' + escapeHtml(e.departureTime) : '') +
+              (e.memo ? ' - ' + escapeHtml(e.memo) : '');
             barsHtml += '<span class="' + barCls + '" title="' + titleText + '">' + label + '</span>';
           }
           var moreHtml = overflowCount ? '<span class="leave-chip-more">+' + overflowCount + '</span>' : '';
@@ -1690,6 +1706,9 @@
     return (
       '<div class="leave-list-item">' +
         '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span>' +
+        (e.type === "trip"
+          ? (e.departureTime ? '<span class="leave-list-daytype num">출발 ' + escapeHtml(e.departureTime) + '</span>' : '')
+          : '<span class="leave-list-daytype">' + dayTypeLabel(e.dayType) + '</span>') +
         '<span class="leave-list-name">' + escapeHtml(e.name) + '</span>' +
         '<span class="leave-list-range num">' + escapeHtml(e.start) + (e.end !== e.start ? ' ~ ' + escapeHtml(e.end) : '') + '</span>' +
         (e.memo ? '<span class="leave-list-memo">' + escapeHtml(e.memo) + '</span>' : '') +
@@ -1706,7 +1725,7 @@
   }
 
   function renderLeaveEditForm(e) {
-    var draft = ui.editLeaveDraft[e.id] || { name: e.name, start: e.start, end: e.end, memo: e.memo || "", type: e.type };
+    var draft = ui.editLeaveDraft[e.id] || { name: e.name, start: e.start, end: e.end, memo: e.memo || "", type: e.type, dayType: e.dayType || "full", departureTime: e.departureTime || "" };
     return (
       '<div class="new-row-form">' +
         '<div class="grid-fields">' +
@@ -1718,6 +1737,13 @@
           '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
           '<label><input type="radio" name="le-type-' + e.id + '" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
+        (draft.type === "trip"
+          ? field("출발 시간", '<input type="time" id="le-deptime-' + e.id + '" value="' + escapeHtml(draft.departureTime || "") + '">')
+          : plainField("휴가 구분", '<div class="radio-row">' +
+              '<label><input type="radio" name="le-daytype-' + e.id + '" value="full"' + ((draft.dayType || "full") === "full" ? " checked" : "") + '> 연차</label>' +
+              '<label><input type="radio" name="le-daytype-' + e.id + '" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
+              '<label><input type="radio" name="le-daytype-' + e.id + '" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
+            '</div>')) +
         field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(draft.memo) + '">') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-leave-cancel" data-id="' + e.id + '" type="button">취소</button>' +
@@ -1730,7 +1756,7 @@
   function renderLeaveForm() {
     if (!ui.leaveFormOpen) return "";
     var prefillDate = ui.leaveFormDate || todayStr();
-    var draft = ui.leaveFormDraft || { name: whoAmI(), start: prefillDate, end: prefillDate, memo: "", type: "vacation" };
+    var draft = ui.leaveFormDraft || { name: whoAmI(), start: prefillDate, end: prefillDate, memo: "", type: "vacation", dayType: "full", departureTime: "" };
     return (
       '<div class="new-row-form">' +
         '<div class="grid-fields">' +
@@ -1742,6 +1768,13 @@
           '<label><input type="radio" name="lf-type" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
           '<label><input type="radio" name="lf-type" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
+        (draft.type === "trip"
+          ? field("출발 시간", '<input type="time" id="lf-deptime" value="' + escapeHtml(draft.departureTime || "") + '">')
+          : plainField("휴가 구분", '<div class="radio-row">' +
+              '<label><input type="radio" name="lf-daytype" value="full"' + ((draft.dayType || "full") === "full" ? " checked" : "") + '> 연차</label>' +
+              '<label><input type="radio" name="lf-daytype" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
+              '<label><input type="radio" name="lf-daytype" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
+            '</div>')) +
         field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">') +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="leave-form-cancel" type="button">취소</button>' +
@@ -1969,6 +2002,8 @@
         var lfEnd = (document.getElementById("lf-end") || {}).value || "";
         var lfMemo = ((document.getElementById("lf-memo") || {}).value || "").trim();
         var lfType = (document.querySelector('input[name="lf-type"]:checked') || {}).value || "vacation";
+        var lfDayType = (document.querySelector('input[name="lf-daytype"]:checked') || {}).value || "full";
+        var lfDepTime = ((document.getElementById("lf-deptime") || {}).value || "").trim();
         if (!lfName) { toast("이름을 입력해 주세요."); return; }
         if (!lfStart || !lfEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
         if (lfEnd < lfStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
@@ -1977,10 +2012,12 @@
         ui.leaveFormDraft = null;
         ui.datePicker = null;
         render();
-        leavesRef.push({
+        var lfPayload = {
           name: lfName, type: lfType, start: lfStart, end: lfEnd, memo: lfMemo,
           createdAt: nowIso(), createdBy: whoAmI()
-        }).then(function () {
+        };
+        if (lfType === "trip") lfPayload.departureTime = lfDepTime; else lfPayload.dayType = lfDayType;
+        leavesRef.push(lfPayload).then(function () {
           pushActivity(whoAmI() + "님이 " + lfName + "의 " + (lfType === "trip" ? "출장" : "휴가") + " 일정(" + lfStart + (lfEnd !== lfStart ? "~" + lfEnd : "") + ")을 등록했습니다.");
         }).catch(function (err) {
           toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
@@ -2044,6 +2081,8 @@
         var leEnd = (document.getElementById("le-end-" + id) || {}).value || "";
         var leMemo = ((document.getElementById("le-memo-" + id) || {}).value || "").trim();
         var leType = (document.querySelector('input[name="le-type-' + id + '"]:checked') || {}).value || "vacation";
+        var leDayType = (document.querySelector('input[name="le-daytype-' + id + '"]:checked') || {}).value || "full";
+        var leDepTime = ((document.getElementById("le-deptime-" + id) || {}).value || "").trim();
         if (!leName) { toast("이름을 입력해 주세요."); return; }
         if (!leStart || !leEnd) { toast("시작일과 종료일을 입력해 주세요."); return; }
         if (leEnd < leStart) { toast("종료일이 시작일보다 빠릅니다."); return; }
@@ -2051,9 +2090,11 @@
         delete ui.editLeaveDraft[id];
         ui.datePicker = null;
         render();
-        leavesRef.child(id).update({
-          name: leName, type: leType, start: leStart, end: leEnd, memo: leMemo
-        }).then(function () {
+        var lePayload = { name: leName, type: leType, start: leStart, end: leEnd, memo: leMemo };
+        // null deletes the now-irrelevant field in Firebase, so switching type doesn't leave stale data behind
+        if (leType === "trip") { lePayload.departureTime = leDepTime; lePayload.dayType = null; }
+        else { lePayload.dayType = leDayType; lePayload.departureTime = null; }
+        leavesRef.child(id).update(lePayload).then(function () {
           pushActivity(whoAmI() + "님이 " + leName + "의 휴가·출장 일정을 수정했습니다.");
         }).catch(function (err) {
           toast("저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
@@ -2324,6 +2365,15 @@
     if (e.target.id === "sort-select") {
       ui.sortBy = e.target.value;
       saveSortPref();
+      render();
+      return;
+    }
+    // 휴가/출장 toggle swaps in a different sub-field (반차 구분 vs. 출발 시간), so it needs
+    // its own re-render; capture the in-progress form first so nothing typed so far is lost.
+    var changedName = e.target.name || "";
+    if (changedName === "lf-type" || changedName.indexOf("le-type-") === 0) {
+      var typeScope = changedName === "lf-type" ? "add" : changedName.slice("le-type-".length);
+      captureLeaveDraft(typeScope);
       render();
       return;
     }
