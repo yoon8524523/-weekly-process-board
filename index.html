@@ -346,6 +346,8 @@
     background: var(--surface-2); color: var(--ink); font-size: 13.5px; font-family: inherit;
   }
   .field textarea { resize: vertical; min-height: 40px; }
+  .field-inline { display: flex; align-items: center; gap: 6px; }
+  .field-inline .date-field-anchor { flex: 1; min-width: 0; }
   .plain-field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
   .radio-row { display: flex; gap: 14px; align-items: center; font-size: 13px; flex-wrap: wrap; }
@@ -1713,9 +1715,15 @@
     );
   }
 
+  function renderLeaveDeleteControl(id) {
+    var pending = !!ui.pendingDeleteLeave[id];
+    return pending
+      ? '<button class="danger-confirm" data-action="delete-leave-confirm" data-id="' + id + '">삭제 확정</button><button class="icon-btn" title="취소" data-action="delete-leave-cancel" data-id="' + id + '">↩</button>'
+      : '<button class="icon-btn" title="삭제" data-action="delete-leave" data-id="' + id + '">✕</button>';
+  }
+
   function renderLeaveListItem(e) {
     if (canWriteNow && ui.editLeave[e.id]) return renderLeaveEditForm(e);
-    var pending = !!ui.pendingDeleteLeave[e.id];
     return (
       '<div class="leave-list-item">' +
         '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span>' +
@@ -1727,9 +1735,7 @@
         (canWriteNow ? (
           '<span class="leave-list-actions">' +
             '<button class="icon-btn" title="수정" data-action="edit-leave-toggle" data-id="' + e.id + '">✎</button>' +
-            (pending
-              ? '<button class="danger-confirm" data-action="delete-leave-confirm" data-id="' + e.id + '">삭제 확정</button><button class="icon-btn" title="취소" data-action="delete-leave-cancel" data-id="' + e.id + '">↩</button>'
-              : '<button class="icon-btn" title="삭제" data-action="delete-leave" data-id="' + e.id + '">✕</button>') +
+            renderLeaveDeleteControl(e.id) +
           '</span>'
         ) : '') +
       '</div>'
@@ -1743,7 +1749,7 @@
         '<div class="grid-fields">' +
           field("이름", '<input id="le-name-' + e.id + '" value="' + escapeHtml(draft.name) + '">') +
           field("시작일", renderDateField(e.id, "start", draft.start)) +
-          field("종료일", renderDateField(e.id, "end", draft.end)) +
+          field("종료일", '<div class="field-inline">' + renderDateField(e.id, "end", draft.end) + renderLeaveDeleteControl(e.id) + '</div>') +
         '</div>' +
         '<div class="radio-row">' +
           '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
