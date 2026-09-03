@@ -197,6 +197,8 @@
   .leave-bar-bleed-left { margin-left: -7px; }
   .leave-bar-bleed-right { margin-right: -7px; }
   .leave-bar-spacer { height: 15px; }
+  .leave-bar-editable { cursor: pointer; }
+  .leave-bar-editable:hover, .leave-bar-editable:focus-visible { box-shadow: inset 0 0 0 1px currentColor; outline: none; }
   .leave-legend { display: flex; gap: 10px; align-items: center; margin: 10px 0 4px; font-size: 12px; color: var(--ink-muted); }
   .leave-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
   .leave-list-item {
@@ -1662,8 +1664,11 @@
             ) : '';
             var titleText = escapeHtml(e.name) + ' (' + (e.type === "trip" ? "출장" : dayTypeLabel(e.dayType)) + ')' +
               (e.type === "trip" && e.departureTime ? ' · 출발 ' + escapeHtml(e.departureTime) : '') +
-              (e.memo ? ' - ' + escapeHtml(e.memo) : '');
-            barsHtml += '<span class="' + barCls + '" title="' + titleText + '">' + label + '</span>';
+              (e.memo ? ' - ' + escapeHtml(e.memo) : '') +
+              (canWriteNow ? ' (클릭해서 수정)' : '');
+            barsHtml += canWriteNow
+              ? '<span class="' + barCls + ' leave-bar-editable" role="button" tabindex="0" data-action="edit-leave-toggle" data-id="' + e.id + '" title="' + titleText + '">' + label + '</span>'
+              : '<span class="' + barCls + '" title="' + titleText + '">' + label + '</span>';
           }
           var moreHtml = overflowCount ? '<span class="leave-chip-more">+' + overflowCount + '</span>' : '';
           var holidayName = monthHolidays[dateStr];
@@ -2030,12 +2035,23 @@
         });
         break;
       }
-      case "edit-leave-toggle":
-        ui.editLeave[id] = !ui.editLeave[id];
+      case "edit-leave-toggle": {
+        var opening = !ui.editLeave[id];
+        ui.editLeave[id] = opening;
         delete ui.editLeaveDraft[id];
         if (ui.datePicker && ui.datePicker.scope === id) ui.datePicker = null;
         render();
+        // opened from a calendar bar click: the edit form lives further down in the list,
+        // so bring it into view and focus its name field instead of leaving it off-screen
+        if (opening) {
+          var openedNameEl = document.getElementById("le-name-" + id);
+          if (openedNameEl) {
+            openedNameEl.closest(".new-row-form").scrollIntoView({ block: "center", behavior: "smooth" });
+            openedNameEl.focus();
+          }
+        }
         break;
+      }
       case "edit-leave-cancel":
         ui.editLeave[id] = false;
         delete ui.editLeaveDraft[id];
