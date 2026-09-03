@@ -1737,14 +1737,15 @@
           '<label><input type="radio" name="le-type-' + e.id + '" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
           '<label><input type="radio" name="le-type-' + e.id + '" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
-        (draft.type === "trip"
-          ? field("출발 시간", '<input type="time" id="le-deptime-' + e.id + '" value="' + escapeHtml(draft.departureTime || "") + '">')
-          : plainField("휴가 구분", '<div class="radio-row">' +
+        (draft.type === "trip" ? "" : plainField("휴가 구분", '<div class="radio-row">' +
               '<label><input type="radio" name="le-daytype-' + e.id + '" value="full"' + ((draft.dayType || "full") === "full" ? " checked" : "") + '> 연차</label>' +
               '<label><input type="radio" name="le-daytype-' + e.id + '" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
               '<label><input type="radio" name="le-daytype-' + e.id + '" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
             '</div>')) +
         field("메모 (선택)", '<input id="le-memo-' + e.id + '" value="' + escapeHtml(draft.memo) + '">') +
+        (draft.type === "trip"
+          ? field("출발 시간", '<input type="time" id="le-deptime-' + e.id + '" value="' + escapeHtml(draft.departureTime || "") + '">')
+          : "") +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-leave-cancel" data-id="' + e.id + '" type="button">취소</button>' +
           '<button class="primary-btn" data-action="edit-leave-save" data-id="' + e.id + '" type="button">저장</button>' +
@@ -1768,14 +1769,15 @@
           '<label><input type="radio" name="lf-type" value="vacation"' + (draft.type !== "trip" ? " checked" : "") + '> 휴가</label>' +
           '<label><input type="radio" name="lf-type" value="trip"' + (draft.type === "trip" ? " checked" : "") + '> 출장</label>' +
         '</div>' +
-        (draft.type === "trip"
-          ? field("출발 시간", '<input type="time" id="lf-deptime" value="' + escapeHtml(draft.departureTime || "") + '">')
-          : plainField("휴가 구분", '<div class="radio-row">' +
+        (draft.type === "trip" ? "" : plainField("휴가 구분", '<div class="radio-row">' +
               '<label><input type="radio" name="lf-daytype" value="full"' + ((draft.dayType || "full") === "full" ? " checked" : "") + '> 연차</label>' +
               '<label><input type="radio" name="lf-daytype" value="am"' + (draft.dayType === "am" ? " checked" : "") + '> 반차(오전)</label>' +
               '<label><input type="radio" name="lf-daytype" value="pm"' + (draft.dayType === "pm" ? " checked" : "") + '> 반차(오후)</label>' +
             '</div>')) +
         field("메모 (선택)", '<input id="lf-memo" placeholder="예: 부산 현장" value="' + escapeHtml(draft.memo) + '">') +
+        (draft.type === "trip"
+          ? field("출발 시간", '<input type="time" id="lf-deptime" value="' + escapeHtml(draft.departureTime || "") + '">')
+          : "") +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="leave-form-cancel" type="button">취소</button>' +
           '<button class="primary-btn" data-action="leave-form-submit" type="button">추가</button>' +
