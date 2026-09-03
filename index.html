@@ -586,6 +586,7 @@
   } catch (e) {}
   var gatePasscode = null; // fetched from config/passcode once authenticated
   var gateError = "";
+  var gateErrorRendered = null; // last gateError the gate screen was actually rendered with
 
   firebase.auth().signInAnonymously().then(function () {
     firebase.database().ref("config/passcode").once("value").then(function (snap) {
@@ -1304,6 +1305,11 @@
   function render() {
     if (isComposing) { renderPending = true; return; }
     if (!gateOk) {
+      // Background events (auth/data listeners resolving) call render() while the gate is
+      // still up; without this guard each one would blow away #gate-input mid-keystroke,
+      // dropping focus and whatever the visitor had already typed.
+      if (document.getElementById("gate-input") && gateErrorRendered === gateError) return;
+      gateErrorRendered = gateError;
       document.getElementById("app").innerHTML = renderGate();
       return;
     }
