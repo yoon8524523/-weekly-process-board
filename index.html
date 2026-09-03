@@ -327,9 +327,17 @@
   .activity-list .t { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); white-space: nowrap; }
 
   /* ---------- add row form ---------- */
+  @keyframes new-row-form-in {
+    from { opacity: 0; transform: translateY(-8px) scaleY(0.96); }
+    to { opacity: 1; transform: translateY(0) scaleY(1); }
+  }
   .new-row-form {
     background: var(--surface); border: 1px dashed var(--accent); border-radius: 14px;
     padding: 14px; margin-bottom: 16px; display: grid; gap: 10px;
+    transform-origin: top; animation: new-row-form-in 220ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .new-row-form { animation: none; }
   }
   .grid-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
