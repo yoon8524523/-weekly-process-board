@@ -1693,7 +1693,8 @@
         var weekEntries = entries.filter(function (e) {
           return week.some(function (ds) { return ds && e.start <= ds && e.end >= ds; });
         }).sort(function (a, b) {
-          return a.start.localeCompare(b.start) || b.end.localeCompare(a.end);
+          var typeRank = function (e) { return e.type === "trip" ? 0 : 1; };
+          return typeRank(a) - typeRank(b) || a.start.localeCompare(b.start) || b.end.localeCompare(a.end);
         });
         var laneEnds = [];
         var laneOf = {};
