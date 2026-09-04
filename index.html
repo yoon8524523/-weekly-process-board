@@ -214,7 +214,17 @@
   .leave-bar-editable { cursor: pointer; }
   .leave-bar-editable:hover, .leave-bar-editable:focus-visible { box-shadow: inset 0 0 0 1px currentColor; outline: none; }
   .leave-legend { display: flex; gap: 10px; align-items: center; margin: 10px 0 4px; font-size: 12px; color: var(--ink-muted); }
-  .leave-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .leave-list {
+    display: flex; flex-direction: column; gap: 6px; margin-top: 6px;
+    max-height: 420px; overflow-y: auto; scroll-behavior: smooth; padding-right: 2px;
+  }
+  .leave-date-group { display: flex; flex-direction: column; gap: 6px; }
+  .leave-date-heading {
+    position: sticky; top: 0; z-index: 1; background: var(--bg);
+    margin: 0; padding: 4px 2px; font-size: 11px; font-weight: 700;
+    color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em;
+  }
+  .leave-date-heading-today { color: var(--accent-strong); }
   .leave-list-item {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px;
@@ -587,6 +597,7 @@
   };
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
+  var scrollLeaveListToToday = false; // consumed once by render() to scroll the leave list to today's group
 
   try {
     ui.myName = localStorage.getItem("wpb_myname") || "";
@@ -605,7 +616,10 @@
     var savedView = localStorage.getItem("wpb_view");
     if (savedView === "board" || savedView === "leaves") {
       ui.view = savedView;
-      if (savedView === "leaves") ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+      if (savedView === "leaves") {
+        ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+        scrollLeaveListToToday = true;
+      }
     }
   } catch (e) { /* storage unavailable: keep defaults */ }
 
@@ -1430,6 +1444,15 @@
       ));
 
     document.getElementById("app").innerHTML = html;
+
+    // scroll the monthly leave list to today's date group exactly once when the leaves
+    // view is entered (tab click, or restored from localStorage on load) — not on every
+    // re-render, or editing an entry would keep yanking the scroll position back to today
+    if (isLeavesView && scrollLeaveListToToday) {
+      scrollLeaveListToToday = false;
+      var todayGroupEl = document.getElementById("leave-date-" + todayStr());
+      if (todayGroupEl) todayGroupEl.scrollIntoView({ block: "start" });
+    }
   }
 
   function viewTab(value, label) {
@@ -1654,7 +1677,7 @@
     var startWeekday = firstWeekday(y, m);
     var todayVal = todayStr();
     var monthHolidays = holidaysForYear(y);
-    var MAX_LEAVE_LANES = 3;
+    var MAX_LEAVE_LANES = 5;
 
     // Build the visible day grid (null = leading/trailing blank cell) and chunk it into
     // calendar weeks so multi-day entries can be assigned a consistent lane per week —
@@ -1742,8 +1765,29 @@
       })(gridDays.slice(w, w + 7));
     }
 
-    var listHtml = entries.length
-      ? entries.map(renderLeaveListItem).join("")
+    // group by start date so the list reads as one section per day; entries is already
+    // sorted by start date, so groups come out in date order for free
+    var dateGroups = [];
+    var groupByDate = {};
+    entries.forEach(function (e) {
+      if (!groupByDate[e.start]) {
+        groupByDate[e.start] = [];
+        dateGroups.push({ date: e.start, items: groupByDate[e.start] });
+      }
+      groupByDate[e.start].push(e);
+    });
+    var WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+    var listHtml = dateGroups.length
+      ? dateGroups.map(function (g) {
+          var gd = parseDateStr(g.date);
+          var isToday = g.date === todayVal;
+          return '<div class="leave-date-group" id="leave-date-' + g.date + '">' +
+            '<h5 class="leave-date-heading' + (isToday ? ' leave-date-heading-today' : '') + '">' +
+              (gd.getMonth() + 1) + '월 ' + gd.getDate() + '일 (' + WEEKDAY_LABELS[gd.getDay()] + ')' + (isToday ? ' · 오늘' : '') +
+            '</h5>' +
+            g.items.map(renderLeaveListItem).join('') +
+          '</div>';
+        }).join('')
       : '<div class="empty-hint">이번 달 등록된 휴가·출장 일정이 없습니다.</div>';
 
     return (
@@ -1757,7 +1801,7 @@
       '<div class="leave-cal-grid">' + cells + '</div>' +
       '<div class="leave-legend"><span class="leave-chip leave-chip-vacation">휴가</span><span class="leave-chip leave-chip-trip">출장</span></div>' +
       '<h4 class="col-head" style="margin-top:18px">이번 달 일정 목록</h4>' +
-      '<div class="leave-list">' + listHtml + '</div>'
+      '<div class="leave-list" id="leave-list-scroll">' + listHtml + '</div>'
     );
   }
 
@@ -1951,8 +1995,9 @@
         if (ui.view !== newView) {
           ui.view = newView;
           try { localStorage.setItem("wpb_view", newView); } catch (e) {}
-          if (newView === "leaves" && !ui.leavesMonth) {
-            ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+          if (newView === "leaves") {
+            if (!ui.leavesMonth) ui.leavesMonth = { y: new Date().getFullYear(), m: new Date().getMonth() };
+            scrollLeaveListToToday = true;
           }
           render();
         }
