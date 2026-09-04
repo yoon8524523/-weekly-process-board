@@ -183,7 +183,21 @@
     background: var(--good-soft); color: var(--good); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .leave-chip-trip { background: var(--warn-soft); color: var(--warn); }
-  .leave-chip-more { font-size: 10px; color: var(--ink-muted); }
+  .leave-chip-more {
+    border: none; background: none; padding: 0; font: inherit; text-align: left;
+    font-size: 10px; color: var(--ink-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .leave-chip-more:hover, .leave-chip-more:focus-visible { color: var(--accent-strong); outline: none; }
+  .leave-overflow-anchor { display: block; }
+  .leave-overflow-popover {
+    display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; padding: 8px;
+  }
+  .leave-overflow-row {
+    display: flex; align-items: center; gap: 6px; border: none; background: none; padding: 4px 6px;
+    border-radius: 8px; font-size: 12px; color: var(--ink); text-align: left; font-family: inherit;
+  }
+  button.leave-overflow-row { cursor: pointer; }
+  button.leave-overflow-row:hover, button.leave-overflow-row:focus-visible { background: var(--surface-2); outline: none; }
   /* multi-day bars: a bar bleeds past its own cell's padding+border, halfway into the
      grid gap, on the sides where it continues into a neighboring day, so two adjacent
      days' bars meet exactly in the gap and read as one connected bar. */
@@ -562,6 +576,7 @@
     categoryPickerRow: null, // row id whose category picker popover is open
     view: "board",         // "board" | "leaves"
     leavesMonth: null,     // { y, m } for the leaves calendar month being viewed
+    leaveOverflowDay: null, // date string whose "+N" overflow popover is open in the leave calendar
     leaveFormOpen: false,
     leaveFormDate: null,    // date string to prefill start/end when opened by clicking a calendar day
     leaveFormDraft: null,   // { name, start, end, memo, type } snapshot of the add-form's in-progress fields
@@ -1311,6 +1326,10 @@
       ui.datePicker = null;
       render();
     }
+    if (ui.leaveOverflowDay && !e.target.closest(".leave-overflow-anchor")) {
+      ui.leaveOverflowDay = null;
+      render();
+    }
   });
 
   var isComposing = false;   // true while any input/textarea has an active IME (e.g. Korean) composition
@@ -1666,7 +1685,8 @@
         week.forEach(function (dateStr, colIdx) {
           if (!dateStr) { cells += '<div class="leave-cal-cell leave-cal-empty"></div>'; return; }
           var dayEntries = weekEntries.filter(function (e) { return e.start <= dateStr && e.end >= dateStr; });
-          var overflowCount = dayEntries.filter(function (e) { return laneOf[e.id] >= MAX_LEAVE_LANES; }).length;
+          var overflowEntries = dayEntries.filter(function (e) { return laneOf[e.id] >= MAX_LEAVE_LANES; });
+          var overflowCount = overflowEntries.length;
           var barsHtml = "";
           for (var lane = 0; lane < shownLanes; lane++) {
             var e = dayEntries.find(function (x) { return laneOf[x.id] === lane; });
@@ -1689,7 +1709,24 @@
               ? '<span class="' + barCls + ' leave-bar-editable" role="button" tabindex="0" data-action="edit-leave-toggle" data-id="' + e.id + '" title="' + titleText + '">' + label + '</span>'
               : '<span class="' + barCls + '" title="' + titleText + '">' + label + '</span>';
           }
-          var moreHtml = overflowCount ? '<span class="leave-chip-more">+' + overflowCount + '</span>' : '';
+          var moreHtml = "";
+          if (overflowCount) {
+            var overflowOpen = ui.leaveOverflowDay === dateStr;
+            var overflowRows = overflowEntries.map(function (e) {
+              var rowLabel = escapeHtml(e.name) + (e.type === "trip"
+                ? (e.memo ? ' · ' + escapeHtml(e.memo) : '')
+                : (e.dayType && e.dayType !== "full" ? ' (' + (e.dayType === "am" ? "오전" : "오후") + ')' : ''));
+              var rowChip = '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span><span>' + rowLabel + '</span>';
+              return canWriteNow
+                ? '<button type="button" class="leave-overflow-row" data-action="edit-leave-toggle" data-id="' + e.id + '">' + rowChip + '</button>'
+                : '<div class="leave-overflow-row">' + rowChip + '</div>';
+            }).join("");
+            moreHtml =
+              '<span class="cal-anchor leave-overflow-anchor">' +
+                '<button type="button" class="leave-chip-more" data-action="leave-overflow-toggle" data-date="' + dateStr + '">+' + overflowCount + '</button>' +
+                (overflowOpen ? '<div class="cal-popover leave-overflow-popover">' + overflowRows + '</div>' : '') +
+              '</span>';
+          }
           var holidayName = monthHolidays[dateStr];
           var daynumClass = holidayName ? " leave-cal-holiday" : (colIdx === 0 ? " leave-cal-sun" : colIdx === 6 ? " leave-cal-sat" : "");
           var dayNum = Number(dateStr.slice(-2));
@@ -2012,12 +2049,20 @@
       case "leaves-prev-month": {
         ui.leavesMonth.m -= 1;
         if (ui.leavesMonth.m < 0) { ui.leavesMonth.m = 11; ui.leavesMonth.y -= 1; }
+        ui.leaveOverflowDay = null;
         render();
         break;
       }
       case "leaves-next-month": {
         ui.leavesMonth.m += 1;
         if (ui.leavesMonth.m > 11) { ui.leavesMonth.m = 0; ui.leavesMonth.y += 1; }
+        ui.leaveOverflowDay = null;
+        render();
+        break;
+      }
+      case "leave-overflow-toggle": {
+        var ovDate = el.getAttribute("data-date");
+        ui.leaveOverflowDay = (ui.leaveOverflowDay === ovDate) ? null : ovDate;
         render();
         break;
       }
@@ -2072,6 +2117,7 @@
         ui.editLeave[id] = opening;
         delete ui.editLeaveDraft[id];
         if (ui.datePicker && ui.datePicker.scope === id) ui.datePicker = null;
+        if (opening) ui.leaveOverflowDay = null;
         render();
         // opened from a calendar bar click: the edit form lives further down in the list,
         // so bring it into view and focus its name field instead of leaving it off-screen
