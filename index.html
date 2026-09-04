@@ -374,6 +374,17 @@
   @media (prefers-reduced-motion: reduce) {
     .new-row-form { animation: none; }
   }
+  @keyframes leave-edit-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+  .leave-edit-backdrop {
+    position: fixed; inset: 0; z-index: 200; background: rgba(16, 30, 27, 0.45);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    animation: leave-edit-backdrop-in 160ms ease-out;
+  }
+  .leave-edit-modal { width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  .leave-edit-modal .new-row-form { margin-bottom: 0; box-shadow: var(--shadow); }
+  @media (prefers-reduced-motion: reduce) {
+    .leave-edit-backdrop { animation: none; }
+  }
   .grid-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
   .field input, .field select, .field textarea {
@@ -1791,6 +1802,8 @@
         }).join('')
       : '<div class="empty-hint">이번 달 등록된 휴가·출장 일정이 없습니다.</div>';
 
+    var editingEntry = canWriteNow ? entries.find(function (e) { return ui.editLeave[e.id]; }) : null;
+
     return (
       '<div class="leave-toolbar">' +
         '<button type="button" class="icon-btn" data-action="leaves-prev-month">◀</button>' +
@@ -1802,7 +1815,12 @@
       '<div class="leave-cal-grid">' + cells + '</div>' +
       '<div class="leave-legend"><span class="leave-chip leave-chip-vacation">휴가</span><span class="leave-chip leave-chip-trip">출장</span></div>' +
       '<h4 class="col-head" style="margin-top:18px">이번 달 일정 목록</h4>' +
-      '<div class="leave-list" id="leave-list-scroll">' + listHtml + '</div>'
+      '<div class="leave-list" id="leave-list-scroll">' + listHtml + '</div>' +
+      (editingEntry
+        ? '<div class="leave-edit-backdrop" data-action="leave-edit-modal-close">' +
+            '<div class="leave-edit-modal" data-action="leave-edit-modal-noop">' + renderLeaveEditForm(editingEntry) + '</div>' +
+          '</div>'
+        : '')
     );
   }
 
@@ -1822,7 +1840,6 @@
   }
 
   function renderLeaveListItem(e) {
-    if (canWriteNow && ui.editLeave[e.id]) return renderLeaveEditForm(e);
     return (
       '<div class="leave-list-item">' +
         '<span class="leave-chip leave-chip-' + (e.type === "trip" ? "trip" : "vacation") + '">' + (e.type === "trip" ? "출장" : "휴가") + '</span>' +
@@ -2160,22 +2177,32 @@
       }
       case "edit-leave-toggle": {
         var opening = !ui.editLeave[id];
+        // only one edit modal shows at a time; drop any other id's edit state so a stray
+        // leftover flag can never make the modal render the wrong entry
+        Object.keys(ui.editLeave).forEach(function (k) {
+          if (k !== id) { ui.editLeave[k] = false; delete ui.editLeaveDraft[k]; }
+        });
         ui.editLeave[id] = opening;
         delete ui.editLeaveDraft[id];
         if (ui.datePicker && ui.datePicker.scope === id) ui.datePicker = null;
         if (opening) ui.leaveOverflowDay = null;
         render();
-        // opened from a calendar bar click: the edit form lives further down in the list,
-        // so bring it into view and focus its name field instead of leaving it off-screen
         if (opening) {
           var openedNameEl = document.getElementById("le-name-" + id);
-          if (openedNameEl) {
-            openedNameEl.closest(".new-row-form").scrollIntoView({ block: "center", behavior: "smooth" });
-            openedNameEl.focus();
-          }
+          if (openedNameEl) openedNameEl.focus();
         }
         break;
       }
+      case "leave-edit-modal-close": {
+        Object.keys(ui.editLeave).forEach(function (k) {
+          if (ui.editLeave[k]) { ui.editLeave[k] = false; delete ui.editLeaveDraft[k]; }
+        });
+        ui.datePicker = null;
+        render();
+        break;
+      }
+      case "leave-edit-modal-noop":
+        break;
       case "edit-leave-cancel":
         ui.editLeave[id] = false;
         delete ui.editLeaveDraft[id];
@@ -2440,6 +2467,10 @@
   });
 
   document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      var editBackdrop = document.querySelector(".leave-edit-backdrop");
+      if (editBackdrop) { editBackdrop.click(); return; }
+    }
     if ((e.key === "Enter" || e.key === " ") && e.target.getAttribute("role") === "button" && e.target.hasAttribute("data-action")) {
       e.preventDefault();
       e.target.click();
