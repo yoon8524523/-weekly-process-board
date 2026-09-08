@@ -487,7 +487,7 @@
   .item-cell.item-stale { background: #fff; border-color: transparent; }
   .item-cell.item-stale .item-text { opacity: 0.5; }
   .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .item-text { flex: 1; white-space: pre-line; font-weight: 500; line-height: 1.3; color: var(--ink); }
+  .item-text { flex: 1; white-space: pre-wrap; font-weight: 500; line-height: 1.3; color: var(--ink); }
   .item-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .item-footer-indent { padding-left: 24px; } /* lines up with .item-text, which sits right of the .drag-handle above it */
   .item-meta { font-size: 11px; color: var(--ink-muted); line-height: 1; white-space: nowrap; }
@@ -503,7 +503,7 @@
 
   .item-edit-row { margin-bottom: 4px; }
   .item-edit-input {
-    width: 100%; min-height: 52px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
+    width: 100%; min-height: 130px; line-height: 1.3; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
     background: var(--surface); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical;
   }
   .item-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
