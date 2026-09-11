@@ -584,12 +584,17 @@
     sortBy: "created",
     sortDir: "asc",
     newRowOpen: false,
+    newRowDraft: null,  // in-progress new-row-form field snapshot (see captureBoardDrafts)
     editRow: {},       // id -> true while header edit form open
+    editRowDraft: {},  // rowId -> in-progress row-edit-form field snapshot
     addItem: {},        // "id:list" -> true while add-item form open
+    addItemDraft: {},    // "id:list" -> in-progress add-item-form field snapshot
     pendingDeleteRow: {},
     pendingDeleteItem: {},
     editSchedule: {},   // "rowId:listKey:itemId" -> true while schedule input open
+    editScheduleDraft: {}, // "rowId:listKey:itemId" -> in-progress schedule input value
     editItem: {},       // "rowId:listKey:itemId" -> true while item text edit form open
+    editItemDraft: {},  // "rowId:listKey:itemId" -> in-progress item text edit value
     calendarOpen: false,
     calendarMonth: null,  // { y, m } while calendar popover open
     viewingArchive: null, // date string while browsing a saved past snapshot
@@ -996,22 +1001,23 @@
 
   function renderNewRowForm() {
     if (!ui.newRowOpen) return "";
+    var d = ui.newRowDraft || {};
     return (
       '<div class="new-row-form">' +
         '<div class="grid-fields">' +
-          field("Job No", '<input id="nr-jobno" placeholder="예: 2650">') +
-          field("수량", '<input id="nr-qty" placeholder="예: 1 LOT">') +
-          field("Project Manager", '<input id="nr-manager" placeholder="Project Manager 이름" value="' + escapeHtml(whoAmI()) + '">') +
-          field("PO Del.", '<input id="nr-podel" placeholder="예: 2026-09-30">') +
+          field("Job No", '<input id="nr-jobno" placeholder="예: 2650" value="' + escapeHtml(d.jobNo || "") + '">') +
+          field("수량", '<input id="nr-qty" placeholder="예: 1 LOT" value="' + escapeHtml(d.qty || "") + '">') +
+          field("Project Manager", '<input id="nr-manager" placeholder="Project Manager 이름" value="' + escapeHtml(d.manager != null ? d.manager : whoAmI()) + '">') +
+          field("PO Del.", '<input id="nr-podel" placeholder="예: 2026-09-30" value="' + escapeHtml(d.poDel || "") + '">') +
         '</div>' +
-        field("프로젝트명 / 안건명", '<textarea id="nr-name" placeholder="예: OO케미칼 반응기 제작 공사"></textarea>') +
+        field("프로젝트명 / 안건명", '<textarea id="nr-name" placeholder="예: OO케미칼 반응기 제작 공사">' + escapeHtml(d.name || "") + '</textarea>') +
         '<div class="radio-row">' +
-          '<label><input type="radio" name="nr-cat" value="project" checked> 프로젝트</label>' +
-          '<label><input type="radio" name="nr-cat" value="noncontract"> 계약외</label>' +
-          '<label><input type="radio" name="nr-cat" value="safety"> 안전관리</label>' +
+          '<label><input type="radio" name="nr-cat" value="project"' + ((d.cat || "project") === "project" ? " checked" : "") + '> 프로젝트</label>' +
+          '<label><input type="radio" name="nr-cat" value="noncontract"' + (d.cat === "noncontract" ? " checked" : "") + '> 계약외</label>' +
+          '<label><input type="radio" name="nr-cat" value="safety"' + (d.cat === "safety" ? " checked" : "") + '> 안전관리</label>' +
         '</div>' +
-        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", []) + '</div>') +
-        field("상위 프로젝트 (선택)", renderParentSelect("nr-parent", null, null)) +
+        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("nr", d.depts || []) + '</div>') +
+        field("상위 프로젝트 (선택)", renderParentSelect("nr-parent", d.parentId || null, null)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="new-row-cancel" type="button">취소</button>' +
           '<button class="primary-btn" data-action="new-row-submit" type="button">추가</button>' +
@@ -1038,16 +1044,17 @@
 
     var head;
     if (editing) {
+      var erd = ui.editRowDraft[row.id] || { jobNo: row.jobNo, qty: row.qty, manager: row.manager, poDel: row.poDel, name: row.name, depts: row.depts || [], parentId: row.parentId || null };
       head =
         '<div class="edit-fields">' +
-          field("Job No", '<input id="er-jobno-' + row.id + '" value="' + escapeHtml(row.jobNo) + '">') +
-          field("수량", '<input id="er-qty-' + row.id + '" value="' + escapeHtml(row.qty) + '">') +
-          field("Project Manager", '<input id="er-manager-' + row.id + '" value="' + escapeHtml(row.manager) + '">') +
-          field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(row.poDel) + '">') +
+          field("Job No", '<input id="er-jobno-' + row.id + '" value="' + escapeHtml(erd.jobNo) + '">') +
+          field("수량", '<input id="er-qty-' + row.id + '" value="' + escapeHtml(erd.qty) + '">') +
+          field("Project Manager", '<input id="er-manager-' + row.id + '" value="' + escapeHtml(erd.manager) + '">') +
+          field("PO Del.", '<input id="er-podel-' + row.id + '" value="' + escapeHtml(erd.poDel) + '">') +
         '</div>' +
-        field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(row.name) + '</textarea>') +
-        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, row.depts || []) + '</div>') +
-        field("상위 프로젝트 (선택)", renderParentSelect("er-parent-" + row.id, row.parentId || null, row.id)) +
+        field("프로젝트명 / 안건명", '<textarea id="er-name-' + row.id + '">' + escapeHtml(erd.name) + '</textarea>') +
+        plainField("담당 부서", '<div class="radio-row">' + renderDeptCheckboxes("er-" + row.id, erd.depts || []) + '</div>') +
+        field("상위 프로젝트 (선택)", renderParentSelect("er-parent-" + row.id, erd.parentId || null, row.id)) +
         '<div class="form-actions">' +
           '<button class="ghost-btn" data-action="edit-row-cancel" data-id="' + row.id + '" type="button">취소</button>' +
           '<button class="primary-btn" data-action="edit-row-save" data-id="' + row.id + '" type="button">저장</button>' +
@@ -1102,9 +1109,10 @@
     var key = row.id + ":" + listKey + ":" + it.id;
     var inputId = "sched-" + row.id + "-" + listKey + "-" + it.id;
     if (canWriteNow && ui.editSchedule[key]) {
+      var schedVal = Object.prototype.hasOwnProperty.call(ui.editScheduleDraft, key) ? ui.editScheduleDraft[key] : (it.schedule || "");
       return (
         '<span class="sched-edit">' +
-          '<input class="sched-input num" id="' + inputId + '" value="' + escapeHtml(it.schedule || "") + '" placeholder="예: 08/25~08/31">' +
+          '<input class="sched-input num" id="' + inputId + '" value="' + escapeHtml(schedVal) + '" placeholder="예: 08/25~08/31">' +
           '<button class="icon-btn" data-action="save-schedule" data-id="' + row.id + '" data-list="' + listKey + '" data-item="' + it.id + '" title="저장">✓</button>' +
         '</span>'
       );
@@ -1136,10 +1144,11 @@
     var stale = listKey === "status" && isStale(it.ts);
 
     if (editingItem) {
+      var editText = Object.prototype.hasOwnProperty.call(ui.editItemDraft, editKey) ? ui.editItemDraft[editKey] : it.text;
       return (
         '<div class="item-cell' + colClass + '"' + dataAttrs + styleAttr + '>' +
           '<div class="item-edit-row">' +
-            '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(it.text) + '</textarea>' +
+            '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(editText) + '</textarea>' +
           '</div>' +
           '<div class="item-footer">' +
             '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
@@ -1180,10 +1189,11 @@
     var addKey = row.id + ":" + listKey;
     var addOpen = !!ui.addItem[addKey];
     var withSchedule = listKey === "status";
+    var addDraft = ui.addItemDraft[addKey] || {};
     var inner = addOpen
       ? '<div class="add-item-form">' +
-          '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' +
-          (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)">' : "") +
+          '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" value="' + escapeHtml(addDraft.text || "") + '" autofocus>' +
+          (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)" value="' + escapeHtml(addDraft.schedule || "") + '">' : "") +
           '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
           '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
         '</div>'
@@ -1365,6 +1375,64 @@
     if (renderPending) { renderPending = false; render(); }
   });
 
+  // snapshots every currently-open board form's live (possibly unsaved) field values into ui
+  // state, reading the DOM right before render() tears it down to rebuild. Without this, a
+  // concurrent change from another user (which also calls render(), via the rowsRef listener)
+  // would wipe out whatever a person was mid-typing in an open add/edit form.
+  function captureBoardDrafts() {
+    if (ui.newRowOpen) {
+      var nrNameEl = document.getElementById("nr-name");
+      if (nrNameEl) {
+        ui.newRowDraft = {
+          jobNo: (document.getElementById("nr-jobno") || {}).value || "",
+          qty: (document.getElementById("nr-qty") || {}).value || "",
+          manager: (document.getElementById("nr-manager") || {}).value || "",
+          poDel: (document.getElementById("nr-podel") || {}).value || "",
+          name: nrNameEl.value,
+          cat: (document.querySelector('input[name="nr-cat"]:checked') || {}).value || "project",
+          depts: readCheckedDepts("nr"),
+          parentId: (document.getElementById("nr-parent") || {}).value || ""
+        };
+      }
+    }
+    Object.keys(ui.editRow).forEach(function (rowId) {
+      if (!ui.editRow[rowId]) return;
+      var nameEl = document.getElementById("er-name-" + rowId);
+      if (!nameEl) return;
+      ui.editRowDraft[rowId] = {
+        jobNo: (document.getElementById("er-jobno-" + rowId) || {}).value || "",
+        qty: (document.getElementById("er-qty-" + rowId) || {}).value || "",
+        manager: (document.getElementById("er-manager-" + rowId) || {}).value || "",
+        poDel: (document.getElementById("er-podel-" + rowId) || {}).value || "",
+        name: nameEl.value,
+        depts: readCheckedDepts("er-" + rowId),
+        parentId: (document.getElementById("er-parent-" + rowId) || {}).value || ""
+      };
+    });
+    Object.keys(ui.addItem).forEach(function (key) {
+      if (!ui.addItem[key]) return;
+      var parts = key.split(":"), rowId = parts[0], listKey = parts[1];
+      var textEl = document.getElementById("ai-" + rowId + "-" + listKey);
+      if (!textEl) return;
+      ui.addItemDraft[key] = {
+        text: textEl.value,
+        schedule: (document.getElementById("ai-sched-" + rowId + "-" + listKey) || {}).value || ""
+      };
+    });
+    Object.keys(ui.editItem).forEach(function (key) {
+      if (!ui.editItem[key]) return;
+      var ip = key.split(":"), ta = document.getElementById("edit-item-" + ip[0] + "-" + ip[1] + "-" + ip[2]);
+      if (!ta) return;
+      ui.editItemDraft[key] = ta.value;
+    });
+    Object.keys(ui.editSchedule).forEach(function (key) {
+      if (!ui.editSchedule[key]) return;
+      var sp = key.split(":"), inp = document.getElementById("sched-" + sp[0] + "-" + sp[1] + "-" + sp[2]);
+      if (!inp) return;
+      ui.editScheduleDraft[key] = inp.value;
+    });
+  }
+
   function renderGate() {
     return (
       '<div class="gate-wrap">' +
@@ -1390,6 +1458,21 @@
       document.getElementById("app").innerHTML = renderGate();
       return;
     }
+    // Capture any open form's in-progress values (and the caret's current position) from the
+    // live DOM before it gets torn down below. render() runs not just on a user's own actions
+    // but on every Firebase update from ANY user, so without this, someone else saving while
+    // you're mid-edit would otherwise wipe what you were typing.
+    captureBoardDrafts();
+    if (ui.leaveFormOpen) captureLeaveDraft("add");
+    Object.keys(ui.editLeave).forEach(function (k) { if (ui.editLeave[k]) captureLeaveDraft(k); });
+    var activeEl = document.activeElement;
+    var activeId = activeEl && activeEl.id;
+    var activeSelStart = null, activeSelEnd = null;
+    if (activeId && typeof activeEl.selectionStart === "number") {
+      activeSelStart = activeEl.selectionStart;
+      activeSelEnd = activeEl.selectionEnd;
+    }
+
     var isLeavesView = ui.view === "leaves";
     var archive = (!isLeavesView && ui.viewingArchive) ? (state.archives || {})[ui.viewingArchive] : null;
     var sourceRows = archive ? (archive.rows || []) : (state.rows || []);
@@ -1455,6 +1538,19 @@
       ));
 
     document.getElementById("app").innerHTML = html;
+
+    // restore focus + caret onto whatever was focused before the rebuild above, so a
+    // concurrent update from another user doesn't knock the cursor out of the field
+    // someone is actively typing into.
+    if (activeId) {
+      var again = document.getElementById(activeId);
+      if (again && again !== document.activeElement) {
+        again.focus();
+        if (activeSelStart != null && typeof again.setSelectionRange === "function") {
+          try { again.setSelectionRange(activeSelStart, activeSelEnd); } catch (e) { /* ignore */ }
+        }
+      }
+    }
 
     // scroll the monthly leave list to today's date group exactly once when the leaves
     // view is entered (tab click, or restored from localStorage on load) — not on every
@@ -2297,10 +2393,12 @@
       }
       case "new-row-toggle":
         ui.newRowOpen = !ui.newRowOpen;
+        if (!ui.newRowOpen) ui.newRowDraft = null;
         render();
         break;
       case "new-row-cancel":
         ui.newRowOpen = false;
+        ui.newRowDraft = null;
         render();
         break;
       case "new-row-submit": {
@@ -2321,6 +2419,7 @@
           createdAt: nowIso(), updatedAt: nowIso()
         };
         ui.newRowOpen = false;
+        ui.newRowDraft = null;
         commit(function () {
           state.rows.push(row);
           pushActivity(whoAmI() + "님이 '" + row.name.split("\n")[0] + "' 항목을 추가했습니다.");
@@ -2329,10 +2428,12 @@
       }
       case "edit-row-toggle":
         ui.editRow[id] = !ui.editRow[id];
+        if (!ui.editRow[id]) delete ui.editRowDraft[id];
         render();
         break;
       case "edit-row-cancel":
         ui.editRow[id] = false;
+        delete ui.editRowDraft[id];
         render();
         break;
       case "edit-row-save": {
@@ -2345,6 +2446,7 @@
           parentId: g("parent") || null
         };
         ui.editRow[id] = false;
+        delete ui.editRowDraft[id];
         commit(function () {
           var r = state.rows.find(function (x) { return x.id === id; });
           if (!r) return;
@@ -2391,12 +2493,14 @@
       }
       case "add-item-toggle":
         ui.addItem[id + ":" + list] = !ui.addItem[id + ":" + list];
+        if (!ui.addItem[id + ":" + list]) delete ui.addItemDraft[id + ":" + list];
         render();
         var target2 = document.getElementById("ai-" + id + "-" + list);
         if (target2) target2.focus();
         break;
       case "add-item-cancel":
         ui.addItem[id + ":" + list] = false;
+        delete ui.addItemDraft[id + ":" + list];
         render();
         break;
       case "add-item-submit":
@@ -2423,6 +2527,7 @@
       case "edit-schedule-toggle": {
         var schedKey = id + ":" + list + ":" + itemId;
         ui.editSchedule[schedKey] = !ui.editSchedule[schedKey];
+        if (!ui.editSchedule[schedKey]) delete ui.editScheduleDraft[schedKey];
         render();
         var schedInputEl = document.getElementById("sched-" + id + "-" + list + "-" + itemId);
         if (schedInputEl) { schedInputEl.focus(); schedInputEl.select(); }
@@ -2434,6 +2539,7 @@
       case "edit-item-toggle": {
         var editItemKey = id + ":" + list + ":" + itemId;
         ui.editItem[editItemKey] = true;
+        delete ui.editItemDraft[editItemKey];
         render();
         var ta = document.getElementById("edit-item-" + id + "-" + list + "-" + itemId);
         if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
@@ -2441,6 +2547,7 @@
       }
       case "cancel-item-edit": {
         ui.editItem[id + ":" + list + ":" + itemId] = false;
+        delete ui.editItemDraft[id + ":" + list + ":" + itemId];
         render();
         break;
       }
@@ -2449,6 +2556,7 @@
         var newText = editTa ? editTa.value.trim() : "";
         if (!newText) { toast("내용을 입력해 주세요."); return; }
         ui.editItem[id + ":" + list + ":" + itemId] = false;
+        delete ui.editItemDraft[id + ":" + list + ":" + itemId];
         commit(function () {
           var r = state.rows.find(function (x) { return x.id === id; });
           if (!r) return;
@@ -2561,6 +2669,7 @@
     var input = document.getElementById("sched-" + rowId + "-" + listKey + "-" + itemId);
     var value = input ? input.value.trim() : "";
     ui.editSchedule[rowId + ":" + listKey + ":" + itemId] = false;
+    delete ui.editScheduleDraft[rowId + ":" + listKey + ":" + itemId];
     commit(function () {
       var r = state.rows.find(function (x) { return x.id === rowId; });
       if (!r) return;
@@ -2582,6 +2691,7 @@
       item.schedule = schedInput ? schedInput.value.trim() : "";
     }
     ui.addItem[rowId + ":" + listKey] = false;
+    delete ui.addItemDraft[rowId + ":" + listKey];
     commit(function () {
       var r = state.rows.find(function (x) { return x.id === rowId; });
       if (!r) return;
