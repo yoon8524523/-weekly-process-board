@@ -614,6 +614,7 @@
 
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
   var scrollLeaveListToToday = false; // consumed once by render() to scroll the leave list to today's group
+  var suppressLeaveDraftCapture = false; // consumed once by render() — see date-field-pick-day
 
   try {
     ui.myName = localStorage.getItem("wpb_myname") || "";
@@ -1463,8 +1464,15 @@
     // but on every Firebase update from ANY user, so without this, someone else saving while
     // you're mid-edit would otherwise wipe what you were typing.
     captureBoardDrafts();
-    if (ui.leaveFormOpen) captureLeaveDraft("add");
-    Object.keys(ui.editLeave).forEach(function (k) { if (ui.editLeave[k]) captureLeaveDraft(k); });
+    // date-field-pick-day already writes the picked date straight into ui.leaveFormDraft /
+    // ui.editLeaveDraft before calling render(); redoing the capture here would re-read the
+    // hidden date input's DOM value, which is still the OLD date until the rebuild below runs,
+    // silently reverting the just-picked date back.
+    if (!suppressLeaveDraftCapture) {
+      if (ui.leaveFormOpen) captureLeaveDraft("add");
+      Object.keys(ui.editLeave).forEach(function (k) { if (ui.editLeave[k]) captureLeaveDraft(k); });
+    }
+    suppressLeaveDraftCapture = false;
     var activeEl = document.activeElement;
     var activeId = activeEl && activeEl.id;
     var activeSelStart = null, activeSelEnd = null;
@@ -2341,6 +2349,7 @@
         pdDraft[pdField] = el.getAttribute("data-date");
         if (pdScope === "add") ui.leaveFormDraft = pdDraft; else ui.editLeaveDraft[pdScope] = pdDraft;
         ui.datePicker = null;
+        suppressLeaveDraftCapture = true;
         render();
         break;
       }
