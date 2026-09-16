@@ -521,9 +521,32 @@
   .item-edit-row { margin-bottom: 4px; }
   .item-edit-input {
     width: 100%; min-height: 100px; line-height: 1.3; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
-    background: var(--surface); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical;
+    background: var(--surface); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical; overflow-y: auto;
   }
   .item-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+  /* ---------- rich-text item editor (bold / underline / font color) ---------- */
+  .rich-toolbar { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+  .rich-btn {
+    width: 26px; height: 26px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+    border-radius: 6px; font-size: 12px; line-height: 1; cursor: pointer;
+  }
+  .rich-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .rich-swatches { display: flex; align-items: center; gap: 5px; margin-left: 2px; }
+  /* a fixed 6-color palette, not a free color picker — data-richcolor is checked against this
+     same allowlist again server-side in extractSafeColor, so even a hand-crafted Firebase write
+     outside this UI can't sneak an arbitrary color past it */
+  .rich-swatch {
+    width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2);
+    padding: 0; cursor: pointer; position: relative; flex-shrink: 0;
+  }
+  .rich-swatch.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-strong); }
+  .rich-swatch.active:after {
+    content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 11px; line-height: 1; text-shadow: 0 0 2px rgba(0, 0, 0, 0.7);
+  }
+  .rich-input { outline: none; overflow-wrap: anywhere; }
+  .rich-input:empty:before { content: attr(data-placeholder); color: var(--ink-muted); }
 
   .sched-chip {
     flex-shrink: 0; border: 1px solid var(--line); background: var(--surface); color: var(--accent-strong);
@@ -540,11 +563,16 @@
   }
 
   .add-item-form { margin-top: 8px; display: flex; align-items: flex-start; gap: 6px; }
-  .add-item-form input, .add-item-form textarea {
+  .add-item-form input {
     flex: 1; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
     background: var(--surface-2); color: var(--ink); font-size: 13px; font-family: inherit;
   }
-  .add-item-form textarea { height: 104px; min-height: 104px; line-height: 1.3; resize: vertical; }
+  .rich-field { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .rich-field .rich-input {
+    height: 104px; min-height: 104px; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); font-size: 13px; font-family: inherit;
+    line-height: 1.3; resize: vertical; overflow-y: auto;
+  }
   .add-item-form input.sched-field { flex: none; width: 100px; }
 
   .toast-root { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
@@ -763,6 +791,159 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  /* ---- rich-text item formatting (bold / underline / font color) ----
+     Item text can carry a small amount of inline formatting, entered through a contenteditable
+     box (see renderRichEditor). Anything that reaches sanitizeRichHtml is untrusted — it may come
+     from another user's browser, a pasted document, or a hand-crafted Firebase write — so it is
+     parsed and rebuilt down to a strict allowlist before it is ever inserted back into the page. */
+  var RICH_TAG_MAP = { B: "b", STRONG: "b", U: "u", SPAN: "span", BR: "br" };
+  var RICH_DROP_ENTIRELY = { SCRIPT: 1, STYLE: 1 };
+  var HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+  // the only 6 colors a user can ever apply — a fixed palette, not a free picker (see
+  // renderRichToolbar). Enforced again here, not just in the UI: extractSafeColor rejects any
+  // hex/rgb value that isn't in this exact set, so a value can't reach storage any other way
+  // (a hand-edited Firebase record, an old client, a future UI bug) either.
+  var RICH_COLORS = [
+    { name: "빨강", hex: "#e53935" },
+    { name: "분홍", hex: "#ec407a" },
+    { name: "초록", hex: "#43a047" },
+    { name: "파랑", hex: "#1e88e5" },
+    { name: "회색", hex: "#757575" },
+    { name: "검정", hex: "#000000" }
+  ];
+  var RICH_COLOR_SET = {};
+  RICH_COLORS.forEach(function (c) { RICH_COLOR_SET[c.hex.toLowerCase()] = true; });
+
+  function sanitizeRichHtml(html) {
+    // Parsing happens inside a <template>: its .content is a spec-guaranteed inert document
+    // fragment, so a malicious payload (e.g. <img src=x onerror=...>) can never load a resource
+    // or fire a handler while we're picking it apart — plain div.innerHTML would not be safe here,
+    // since browsers run onerror/onload handlers as soon as such markup is parsed, even if the
+    // element is never attached to the visible page.
+    var template = document.createElement("template");
+    template.innerHTML = String(html == null ? "" : html);
+    var doc = template.content.ownerDocument;
+    sanitizeRichChildren(template.content, doc);
+    var out = document.createElement("div");
+    out.appendChild(template.content);
+    return out.innerHTML;
+  }
+
+  function sanitizeRichChildren(parent, doc) {
+    var node = parent.firstChild;
+    while (node) {
+      var next = node.nextSibling;
+      if (node.nodeType === 1) {
+        // .tagName is only ever uppercase for HTML elements; an SVG-namespaced element (e.g. one
+        // smuggled in via <svg><script>...) keeps its authored case, so this must be normalized
+        // or a lowercase "script" would silently slip past the RICH_DROP_ENTIRELY["SCRIPT"] check
+        var tag = node.tagName.toUpperCase();
+        if (RICH_DROP_ENTIRELY[tag]) {
+          parent.removeChild(node);
+        } else if (RICH_TAG_MAP[tag] || tag === "FONT") {
+          // <font color> is a legacy alternative some browsers still produce for execCommand's
+          // foreColor instead of <span style="color:...">; treated the same as SPAN here
+          sanitizeRichChildren(node, doc);
+          var outTag = tag === "FONT" ? "span" : RICH_TAG_MAP[tag];
+          // rebuilt from scratch (never the parsed node, never its raw attributes) so nothing
+          // beyond the one attribute we explicitly copy below can ever survive
+          var clean = doc.createElement(outTag);
+          // checked regardless of tag: applying a color to an already-bold/underlined selection
+          // can land the color on the existing <b>/<u> node itself instead of a nested <span>,
+          // depending on the browser, rather than always adding a separate span wrapper
+          var color = extractSafeColor(node);
+          if (color) clean.setAttribute("style", "color:" + color);
+          while (node.firstChild) clean.appendChild(node.firstChild);
+          parent.replaceChild(clean, node);
+          if (outTag === "span" && !clean.hasAttribute("style")) unwrapRichNode(clean, parent);
+        } else {
+          // any other tag (script handled above; this covers div/p/a/img/svg/iframe/etc.):
+          // sanitize its children first, then drop just the tag and keep the cleaned content
+          sanitizeRichChildren(node, doc);
+          unwrapRichNode(node, parent);
+        }
+      } else if (node.nodeType !== 3) {
+        parent.removeChild(node); // comments, processing instructions, etc.
+      }
+      node = next;
+    }
+  }
+
+  function unwrapRichNode(node, parent) {
+    while (node.firstChild) parent.insertBefore(node.firstChild, node);
+    parent.removeChild(node);
+  }
+
+  function extractSafeColor(el) {
+    var style = el.getAttribute("style") || "";
+    var m = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+    var val = m ? m[1].trim() : (el.getAttribute("color") || "").trim();
+    if (!val) return null;
+    var hex = null;
+    if (HEX_COLOR_RE.test(val)) {
+      hex = val.toLowerCase();
+    } else {
+      var rgb = val.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+      if (rgb) {
+        hex = "#" + [rgb[1], rgb[2], rgb[3]].map(function (n) {
+          var h = Math.max(0, Math.min(255, Number(n))).toString(16);
+          return h.length < 2 ? "0" + h : h;
+        }).join("");
+      }
+    }
+    // reject anything outside the fixed 6-color palette, however it was spelled (hex or rgb)
+    return hex && RICH_COLOR_SET[hex] ? hex : null;
+  }
+
+  // plain-text fallback derived from sanitized rich HTML (line breaks -> \n), kept alongside the
+  // formatted version so search/exports/older code paths always have a plain string to read
+  function richHtmlToPlainText(html) {
+    var container = document.createElement("div");
+    container.innerHTML = String(html || "").replace(/<br\s*\/?>/gi, "\n");
+    return container.textContent || "";
+  }
+
+  function hasRichFormatting(html) {
+    return /<(b|u)\b|style="color:/i.test(html || "");
+  }
+
+  // reads + sanitizes a rich editor's live content; returns the pair to store on the item
+  function readRichInput(id) {
+    var el = document.getElementById(id);
+    var html = sanitizeRichHtml(el ? el.innerHTML : "");
+    return { text: richHtmlToPlainText(html).trim(), html: hasRichFormatting(html) ? html : null };
+  }
+
+  // sanitized HTML to actually render for an item; falls back to the plain-text path (escaped +
+  // relying on white-space:pre-wrap) for items that were never touched by the rich editor
+  function renderItemTextHtml(it) {
+    return it.html ? sanitizeRichHtml(it.html) : escapeHtml(it.text);
+  }
+
+  function renderRichToolbar(editorId) {
+    var swatches = RICH_COLORS.map(function (c, i) {
+      return '<button type="button" class="rich-swatch' + (i === RICH_COLORS.length - 1 ? " active" : "") + '"' +
+        ' data-richcolor="' + c.hex + '" title="' + escapeHtml(c.name) + '" style="background:' + c.hex + '"></button>';
+    }).join("");
+    return (
+      '<div class="rich-toolbar" data-editor="' + editorId + '">' +
+        '<button type="button" class="rich-btn" data-richcmd="bold" title="굵게"><b>B</b></button>' +
+        '<button type="button" class="rich-btn" data-richcmd="underline" title="밑줄"><u>U</u></button>' +
+        '<span class="rich-swatches">' + swatches + '</span>' +
+      '</div>'
+    );
+  }
+
+  function renderRichEditor(editorId, cls, placeholder, initialHtml) {
+    return (
+      renderRichToolbar(editorId) +
+      '<div class="rich-input' + (cls ? " " + cls : "") + '" id="' + editorId + '" contenteditable="true" data-placeholder="' + escapeHtml(placeholder) + '">' +
+        (initialHtml || "") +
+      '</div>'
+    );
   }
 
   function nowIso() { return new Date().toISOString(); }
@@ -1168,11 +1349,12 @@
     var stale = listKey === "status" && isStale(it.ts);
 
     if (editingItem) {
-      var editText = Object.prototype.hasOwnProperty.call(ui.editItemDraft, editKey) ? ui.editItemDraft[editKey] : it.text;
+      var editHtml = Object.prototype.hasOwnProperty.call(ui.editItemDraft, editKey) ? ui.editItemDraft[editKey] : renderItemTextHtml(it);
+      var editEditorId = "edit-item-" + row.id + "-" + listKey + "-" + it.id;
       return (
         '<div class="item-cell' + colClass + '"' + dataAttrs + styleAttr + '>' +
           '<div class="item-edit-row">' +
-            '<textarea class="item-edit-input" id="edit-item-' + row.id + '-' + listKey + '-' + it.id + '">' + escapeHtml(editText) + '</textarea>' +
+            renderRichEditor(editEditorId, "item-edit-input", "내용을 입력하세요", editHtml) +
           '</div>' +
           '<div class="item-footer">' +
             '<span class="item-meta">' + escapeHtml(it.author || "익명") + ' · ' + timeAgo(it.ts) + '</span>' +
@@ -1189,7 +1371,7 @@
       '<div class="item-cell' + colClass + (listKey === "issues" ? " issues" : "") + (stale ? " item-stale" : "") + '"' + dataAttrs + styleAttr + '>' +
         '<div class="item-row">' +
           (dragEnabled ? '<span class="drag-handle" title="드래그해서 순서/위치 변경">⠿</span>' : '') +
-          '<span class="item-text">' + escapeHtml(it.text) + '</span>' +
+          '<span class="item-text">' + renderItemTextHtml(it) + '</span>' +
           (withSchedule ? renderScheduleBlock(row, listKey, it) : "") +
         '</div>' +
         '<div class="item-footer' + (dragEnabled ? ' item-footer-indent' : '') + '">' +
@@ -1214,9 +1396,12 @@
     var addOpen = !!ui.addItem[addKey];
     var withSchedule = listKey === "status";
     var addDraft = ui.addItemDraft[addKey] || {};
+    var addEditorId = "ai-" + row.id + "-" + listKey;
     var inner = addOpen
       ? '<div class="add-item-form">' +
-          '<textarea id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' + escapeHtml(addDraft.text || "") + '</textarea>' +
+          '<div class="rich-field">' +
+            renderRichEditor(addEditorId, "", (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력"), addDraft.html || "") +
+          '</div>' +
           (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)" value="' + escapeHtml(addDraft.schedule || "") + '">' : "") +
           '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
           '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
@@ -1436,18 +1621,18 @@
     Object.keys(ui.addItem).forEach(function (key) {
       if (!ui.addItem[key]) return;
       var parts = key.split(":"), rowId = parts[0], listKey = parts[1];
-      var textEl = document.getElementById("ai-" + rowId + "-" + listKey);
-      if (!textEl) return;
+      var editorEl = document.getElementById("ai-" + rowId + "-" + listKey);
+      if (!editorEl) return;
       ui.addItemDraft[key] = {
-        text: textEl.value,
+        html: sanitizeRichHtml(editorEl.innerHTML),
         schedule: (document.getElementById("ai-sched-" + rowId + "-" + listKey) || {}).value || ""
       };
     });
     Object.keys(ui.editItem).forEach(function (key) {
       if (!ui.editItem[key]) return;
-      var ip = key.split(":"), ta = document.getElementById("edit-item-" + ip[0] + "-" + ip[1] + "-" + ip[2]);
-      if (!ta) return;
-      ui.editItemDraft[key] = ta.value;
+      var ip = key.split(":"), ed = document.getElementById("edit-item-" + ip[0] + "-" + ip[1] + "-" + ip[2]);
+      if (!ed) return;
+      ui.editItemDraft[key] = sanitizeRichHtml(ed.innerHTML);
     });
     Object.keys(ui.editSchedule).forEach(function (key) {
       if (!ui.editSchedule[key]) return;
@@ -2599,9 +2784,8 @@
         break;
       }
       case "save-item-edit": {
-        var editTa = document.getElementById("edit-item-" + id + "-" + list + "-" + itemId);
-        var newText = editTa ? editTa.value.trim() : "";
-        if (!newText) { toast("내용을 입력해 주세요."); return; }
+        var editedRich = readRichInput("edit-item-" + id + "-" + list + "-" + itemId);
+        if (!editedRich.text) { toast("내용을 입력해 주세요."); return; }
         ui.editItem[id + ":" + list + ":" + itemId] = false;
         delete ui.editItemDraft[id + ":" + list + ":" + itemId];
         commit(function () {
@@ -2609,7 +2793,8 @@
           if (!r) return;
           var it = (r[list] || []).find(function (x) { return x.id === itemId; });
           if (!it) return;
-          it.text = newText;
+          it.text = editedRich.text;
+          it.html = editedRich.html;
           it.author = whoAmI();
           it.ts = nowIso();
           r.updatedAt = nowIso();
@@ -2619,6 +2804,85 @@
       }
       default: break;
     }
+  });
+
+  // Applies one of the 6 preset colors to the current selection by hand-wrapping it in a
+  // <span style="color:...">, instead of execCommand('foreColor'). execCommand needed
+  // styleWithCSS turned on to produce a <span> at all, but that mode also makes Chrome fold
+  // *other* formatting (bold, underline) into inline CSS on the same span instead of leaving
+  // <b>/<u> tags in place — so combining color with bold/underline silently lost the bold/
+  // underline once styleWithCSS was on. Doing color by hand avoids that mode entirely, so
+  // execCommand('bold'/'underline') below keeps producing plain <b>/<u> regardless.
+  function applyRichColor(hex) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    var range = sel.getRangeAt(0);
+    if (range.collapsed) return;
+    var frag = range.extractContents();
+    clearNestedRichColor(frag);
+    var span = document.createElement("span");
+    span.style.color = hex;
+    span.appendChild(frag);
+    range.insertNode(span);
+    // if the selection was already entirely inside a colored span (re-coloring the same text),
+    // that ancestor span still wraps the new one — its color is now redundant (and would just be
+    // extra dead weight in storage if left to keep nesting on every re-color), so clear it too
+    var ancestor = span.parentNode, editorRoot = span.closest(".rich-input");
+    while (ancestor && ancestor !== editorRoot) {
+      if (ancestor.style) ancestor.style.color = "";
+      ancestor = ancestor.parentNode;
+    }
+    sel.removeAllRanges();
+    var newRange = document.createRange();
+    newRange.selectNodeContents(span);
+    sel.addRange(newRange);
+  }
+
+  // strips any color already applied inside the selection before re-wrapping it, so picking a
+  // new color always overrides one that was applied to only part of the same selection before
+  function clearNestedRichColor(root) {
+    if (root.nodeType === 1 && root.style) root.style.color = "";
+    var all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    Array.prototype.forEach.call(all, function (el) { if (el.style) el.style.color = ""; });
+  }
+
+  // rich-text toolbar: kept out of the [data-action]/render() cycle above entirely, since
+  // re-rendering would tear down and rebuild the contenteditable box the user is actively
+  // formatting, losing their selection. These act directly on the live DOM instead.
+  document.addEventListener("mousedown", function (e) {
+    // preserve the contenteditable's focus/selection through the click, since a normal button
+    // click would otherwise steal focus first and collapse whatever text was selected
+    if (e.target.closest && (e.target.closest(".rich-btn") || e.target.closest(".rich-swatch"))) {
+      e.preventDefault();
+    }
+  });
+  document.addEventListener("click", function (e) {
+    var swatch = e.target.closest && e.target.closest(".rich-swatch");
+    if (swatch) {
+      var swToolbar = swatch.closest(".rich-toolbar");
+      var swEditor = swToolbar && document.getElementById(swToolbar.getAttribute("data-editor"));
+      if (!swEditor) return;
+      swEditor.focus();
+      applyRichColor(swatch.getAttribute("data-richcolor"));
+      Array.prototype.forEach.call(swToolbar.querySelectorAll(".rich-swatch"), function (b) { b.classList.remove("active"); });
+      swatch.classList.add("active");
+      return;
+    }
+    var btn = e.target.closest && e.target.closest(".rich-btn");
+    if (!btn) return;
+    var toolbar = btn.closest(".rich-toolbar");
+    var editor = toolbar && document.getElementById(toolbar.getAttribute("data-editor"));
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(btn.getAttribute("data-richcmd"), false, null);
+  });
+  // force plain-text paste into a rich editor — anything richer than that would just have to be
+  // stripped back down by sanitizeRichHtml anyway, and this keeps its output predictable
+  document.addEventListener("paste", function (e) {
+    if (!(e.target.classList && e.target.classList.contains("rich-input"))) return;
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, text);
   });
 
   document.addEventListener("keydown", function (e) {
@@ -2644,9 +2908,13 @@
       return;
     }
     if (el.id && el.id.indexOf("ai-") === 0) {
-      if (e.shiftKey) return; // let the textarea insert a newline instead of submitting
+      if (e.shiftKey) { e.preventDefault(); document.execCommand("insertLineBreak"); return; }
       var m = el.id.match(/^ai-(.+)-(status|issues)$/);
       if (m) { e.preventDefault(); submitItem(m[1], m[2]); }
+    }
+    if (el.id && el.id.indexOf("edit-item-") === 0) {
+      e.preventDefault();
+      document.execCommand("insertLineBreak");
     }
     if (el.id && el.id.indexOf("sched-") === 0) {
       var m2 = el.id.match(/^sched-(.+)-(status|issues)-(.+)$/);
@@ -2730,10 +2998,9 @@
   }
 
   function submitItem(rowId, listKey) {
-    var input = document.getElementById("ai-" + rowId + "-" + listKey);
-    var text = input ? input.value.trim() : "";
-    if (!text) { toast("내용을 입력해 주세요."); return; }
-    var item = { id: uid(), author: whoAmI(), text: text, ts: nowIso() };
+    var rich = readRichInput("ai-" + rowId + "-" + listKey);
+    if (!rich.text) { toast("내용을 입력해 주세요."); return; }
+    var item = { id: uid(), author: whoAmI(), text: rich.text, html: rich.html, ts: nowIso() };
     if (listKey === "status") {
       var schedInput = document.getElementById("ai-sched-" + rowId + "-" + listKey);
       item.schedule = schedInput ? schedInput.value.trim() : "";
