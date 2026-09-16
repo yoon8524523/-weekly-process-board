@@ -520,7 +520,7 @@
 
   .item-edit-row { margin-bottom: 4px; }
   .item-edit-input {
-    width: 100%; min-height: 130px; line-height: 1.3; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
+    width: 100%; min-height: 100px; line-height: 1.3; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent);
     background: var(--surface); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical;
   }
   .item-edit-actions { display: flex; gap: 4px; flex-shrink: 0; }
@@ -539,12 +539,13 @@
     background: var(--surface); color: var(--ink); font-size: 12px;
   }
 
-  .add-item-form { margin-top: 8px; display: flex; gap: 6px; }
-  .add-item-form input {
+  .add-item-form { margin-top: 8px; display: flex; align-items: flex-start; gap: 6px; }
+  .add-item-form input, .add-item-form textarea {
     flex: 1; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line);
-    background: var(--surface-2); color: var(--ink); font-size: 13px;
+    background: var(--surface-2); color: var(--ink); font-size: 13px; font-family: inherit;
   }
-  .add-item-form input.sched-field { flex: none; width: 118px; }
+  .add-item-form textarea { height: 104px; min-height: 104px; line-height: 1.3; resize: vertical; }
+  .add-item-form input.sched-field { flex: none; width: 100px; }
 
   .toast-root { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
   .toast {
@@ -1215,7 +1216,7 @@
     var addDraft = ui.addItemDraft[addKey] || {};
     var inner = addOpen
       ? '<div class="add-item-form">' +
-          '<input id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" value="' + escapeHtml(addDraft.text || "") + '" autofocus>' +
+          '<textarea id="ai-' + row.id + '-' + listKey + '" placeholder="' + (listKey === "issues" ? "문제점 및 대책 입력" : "진행상황 입력") + '" autofocus>' + escapeHtml(addDraft.text || "") + '</textarea>' +
           (withSchedule ? '<input class="sched-field num" id="ai-sched-' + row.id + '-' + listKey + '" placeholder="일정 (선택)" value="' + escapeHtml(addDraft.schedule || "") + '">' : "") +
           '<button class="text-btn" data-action="add-item-submit" data-id="' + row.id + '" data-list="' + listKey + '">등록</button>' +
           '<button class="icon-btn" data-action="add-item-cancel" data-id="' + row.id + '" data-list="' + listKey + '">✕</button>' +
@@ -2643,6 +2644,7 @@
       return;
     }
     if (el.id && el.id.indexOf("ai-") === 0) {
+      if (e.shiftKey) return; // let the textarea insert a newline instead of submitting
       var m = el.id.match(/^ai-(.+)-(status|issues)$/);
       if (m) { e.preventDefault(); submitItem(m[1], m[2]); }
     }
