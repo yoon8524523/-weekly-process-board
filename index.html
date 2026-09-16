@@ -163,6 +163,7 @@
     background: var(--surface-2); color: var(--ink); font-size: 13.5px; cursor: pointer;
   }
   .date-field-btn:hover { border-color: var(--accent); }
+  .cal-popover-right { left: auto; right: 0; }
   .leave-cal-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
   .leave-cal-daynum-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
   .leave-cal-daynum { font-size: 11px; color: var(--ink); font-family: "IBM Plex Mono", monospace; flex-shrink: 0; }
@@ -314,8 +315,9 @@
   }
   .primary-btn:hover { filter: brightness(1.08); }
   .ghost-btn {
-    border: 1px solid var(--line); background: transparent; color: var(--ink);
-    padding: 8px 13px; border-radius: 10px; font-size: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; height: 34px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 0 13px;
+    border-radius: 10px; font-size: 13.5px; cursor: pointer;
   }
   .ghost-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
   .sort-dir-btn {
@@ -333,8 +335,9 @@
   .icon-btn:hover { background: var(--danger-soft); color: var(--danger); }
   .danger-confirm { color: #fff; background: var(--danger); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
   .danger-btn {
-    border: 1px solid var(--danger); background: transparent; color: var(--danger);
-    padding: 8px 13px; border-radius: 10px; font-size: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; height: 34px;
+    border: 1px solid var(--danger); background: transparent; color: var(--danger); padding: 0 13px;
+    border-radius: 10px; font-size: 13.5px; cursor: pointer;
   }
   .danger-btn:hover { background: var(--danger-soft); }
   .danger-confirm-btn {
@@ -375,15 +378,29 @@
     .new-row-form { animation: none; }
   }
   @keyframes leave-edit-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
-  .leave-edit-backdrop {
+  .leave-modal-backdrop {
     position: fixed; inset: 0; z-index: 200; background: rgba(16, 30, 27, 0.45);
     display: flex; align-items: center; justify-content: center; padding: 20px;
     animation: leave-edit-backdrop-in 160ms ease-out;
   }
-  .leave-edit-modal { width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
-  .leave-edit-modal .new-row-form { margin-bottom: 0; box-shadow: var(--shadow); }
+  /* wide enough that the 232px-wide calendar popover (.cal-popover) fits comfortably inside
+     either the start- or end-date column without crowding the field or overflowing the card,
+     so opening it never needs the card itself to resize. */
+  .leave-modal { width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+  /* the popover is position:absolute, so opening it doesn't grow the card's own height — sized
+     tall enough up front (measured against a worst-case 6-row calendar month, on both the
+     vacation and trip field layouts) that it never needs to when the popover opens, so the card
+     is the same size from the moment it opens whether or not a date picker is showing. */
+  .leave-modal .new-row-form { margin-bottom: 0; box-shadow: var(--shadow); min-height: 350px; }
+  /* render() replaces the whole #app innerHTML on every click inside the modal (picking a date,
+     paging the calendar month, etc.), which recreates these elements as brand-new DOM nodes each
+     time — so without this, their entrance animations would replay on every such click, making
+     the modal visibly "pop"/resize instead of just updating in place. Applied once the modal was
+     already open on the previous render (see addLeaveModalWasOpen / editLeaveModalWasOpenId). */
+  .leave-modal-backdrop.no-anim { animation: none; }
+  .leave-modal-backdrop.no-anim .new-row-form { animation: none; }
   @media (prefers-reduced-motion: reduce) {
-    .leave-edit-backdrop { animation: none; }
+    .leave-modal-backdrop { animation: none; }
   }
   .grid-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .field label { display: block; font-size: 11px; color: var(--ink-muted); margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase; }
@@ -615,6 +632,11 @@
   var canWriteNow = true; // canWrite, further narrowed to false while viewing an archived snapshot
   var scrollLeaveListToToday = false; // consumed once by render() to scroll the leave list to today's group
   var suppressLeaveDraftCapture = false; // consumed once by render() — see date-field-pick-day
+  // whether the leave add/edit modal was already open on the previous render — lets renderLeavesSection()
+  // skip the entrance animation on renders triggered by clicks *inside* an already-open modal (date
+  // picker, month paging) instead of by the modal actually opening. See .leave-modal-backdrop.no-anim.
+  var addLeaveModalWasOpen = false;
+  var editLeaveModalWasOpenId = null;
 
   try {
     ui.myName = localStorage.getItem("wpb_myname") || "";
@@ -1658,8 +1680,11 @@
       cells += '<button type="button" class="cal-cell' + (dateStr === todayVal ? ' cal-today' : '') + (dateStr === value ? ' cal-selected' : '') +
         '" data-action="date-field-pick-day" data-scope="' + scope + '" data-field="' + which + '" data-date="' + dateStr + '">' + d + '</button>';
     }
+    // the end-date field sits in the right-hand column, so anchoring its popover from the right
+    // (instead of the default left:0) keeps it flush inside the modal's right edge instead of
+    // hanging off it — see .cal-popover-right.
     return (
-      '<div class="cal-popover">' +
+      '<div class="cal-popover' + (which === "end" ? " cal-popover-right" : "") + '">' +
         '<div class="cal-header">' +
           '<button type="button" class="icon-btn" data-action="date-field-prev-month" data-scope="' + scope + '" data-field="' + which + '">◀</button>' +
           '<span class="cal-month-label">' + y + '년 ' + (m + 1) + '월</span>' +
@@ -1907,6 +1932,14 @@
       : '<div class="empty-hint">이번 달 등록된 휴가·출장 일정이 없습니다.</div>';
 
     var editingEntry = canWriteNow ? entries.find(function (e) { return ui.editLeave[e.id]; }) : null;
+    var addFormOpen = canWriteNow && ui.leaveFormOpen;
+
+    // only play the modal's entrance animation on the render where it actually opens — not on
+    // every subsequent render caused by interacting with something inside it (see .no-anim above)
+    var addModalCls = (addFormOpen && !addLeaveModalWasOpen) ? "leave-modal-backdrop" : "leave-modal-backdrop no-anim";
+    var editModalCls = (editingEntry && editingEntry.id !== editLeaveModalWasOpenId) ? "leave-modal-backdrop" : "leave-modal-backdrop no-anim";
+    addLeaveModalWasOpen = addFormOpen;
+    editLeaveModalWasOpenId = editingEntry ? editingEntry.id : null;
 
     return (
       '<div class="leave-toolbar">' +
@@ -1914,15 +1947,19 @@
         '<span class="leave-month-label num">' + y + '년 ' + (m + 1) + '월</span>' +
         '<button type="button" class="icon-btn" data-action="leaves-next-month">▶</button>' +
       '</div>' +
-      (canWriteNow ? renderLeaveForm() : "") +
       '<div class="leave-cal-weekdays"><span class="leave-cal-sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="leave-cal-sat">토</span></div>' +
       '<div class="leave-cal-grid">' + cells + '</div>' +
       '<div class="leave-legend"><span class="leave-chip leave-chip-vacation">휴가</span><span class="leave-chip leave-chip-trip">출장</span></div>' +
       '<h4 class="col-head" style="margin-top:18px">이번 달 일정 목록</h4>' +
       '<div class="leave-list" id="leave-list-scroll">' + listHtml + '</div>' +
+      (addFormOpen
+        ? '<div class="' + addModalCls + '" data-action="leave-form-cancel">' +
+            '<div class="leave-modal" data-action="leave-modal-noop">' + renderLeaveForm() + '</div>' +
+          '</div>'
+        : '') +
       (editingEntry
-        ? '<div class="leave-edit-backdrop" data-action="leave-edit-modal-close">' +
-            '<div class="leave-edit-modal" data-action="leave-edit-modal-noop">' + renderLeaveEditForm(editingEntry) + '</div>' +
+        ? '<div class="' + editModalCls + '" data-action="leave-edit-modal-close">' +
+            '<div class="leave-modal" data-action="leave-modal-noop">' + renderLeaveEditForm(editingEntry) + '</div>' +
           '</div>'
         : '')
     );
@@ -2305,7 +2342,7 @@
         render();
         break;
       }
-      case "leave-edit-modal-noop":
+      case "leave-modal-noop":
         break;
       case "edit-leave-cancel":
         ui.editLeave[id] = false;
@@ -2585,8 +2622,8 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
-      var editBackdrop = document.querySelector(".leave-edit-backdrop");
-      if (editBackdrop) { editBackdrop.click(); return; }
+      var leaveModalBackdrop = document.querySelector(".leave-modal-backdrop");
+      if (leaveModalBackdrop) { leaveModalBackdrop.click(); return; }
     }
     if ((e.key === "Enter" || e.key === " ") && e.target.getAttribute("role") === "button" && e.target.hasAttribute("data-action")) {
       e.preventDefault();
