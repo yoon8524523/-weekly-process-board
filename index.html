@@ -81,7 +81,7 @@
   button { font-family: inherit; }
   ::selection { background: var(--accent-soft); }
 
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 20px 20px 80px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 20px 20px 80px; }
 
   /* ---------- header ---------- */
   .topbar {
@@ -320,6 +320,8 @@
     border-radius: 10px; font-size: 13.5px; cursor: pointer;
   }
   .ghost-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .export-btn { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+  .export-icon { width: 14px; height: 14px; flex-shrink: 0; display: block; }
   .sort-dir-btn {
     display: inline-flex; align-items: center; justify-content: center;
     height: 34px; padding: 0 10px; font-size: 13px; line-height: 1;
@@ -1449,6 +1451,266 @@
     return '<div class="card-body">' + html + '</div>';
   }
 
+  /* ================= 엑셀 내보내기 ================= */
+  // ExcelJS is only needed when someone actually exports, so it's fetched lazily on first click
+  // instead of weighing down every page load
+  // 엑셀 아이콘 — drawn inline as SVG so it stays crisp and has no background box
+  var EXCEL_ICON_SVG =
+    '<svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<rect x="8" y="3" width="13" height="18" rx="2" fill="#21a366"/>' +
+    '<path d="M14.5 3v18M8 9h13M8 15h13" stroke="#fff" stroke-opacity=".45" stroke-width="1"/>' +
+    '<rect x="3" y="6.5" width="11" height="11" rx="1.6" fill="#107c41"/>' +
+    '<path d="M6.2 9.4l4.6 5.2M10.8 9.4l-4.6 5.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>' +
+    '</svg>';
+  var EXCELJS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+  var excelJsPromise = null;
+  function loadExcelJs() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!excelJsPromise) {
+      excelJsPromise = new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = EXCELJS_SRC;
+        s.onload = function () { window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error("ExcelJS 로드 실패")); };
+        s.onerror = function () { excelJsPromise = null; reject(new Error("ExcelJS 로드 실패")); };
+        document.head.appendChild(s);
+      });
+    }
+    return excelJsPromise;
+  }
+
+  // item -> ExcelJS cell value, keeping the board's bold/underline/color as rich-text runs
+  function itemToExcelValue(it) {
+    if (!it) return "";
+    if (!it.html) return it.text || "";
+    var template = document.createElement("template");
+    template.innerHTML = sanitizeRichHtml(it.html);
+    var runs = [];
+    (function walk(parent, fmt) {
+      Array.prototype.forEach.call(parent.childNodes, function (node) {
+        if (node.nodeType === 3) {
+          if (!node.nodeValue) return;
+          var font = {};
+          if (fmt.bold) font.bold = true;
+          if (fmt.underline) font.underline = true;
+          if (fmt.color) font.color = { argb: "FF" + fmt.color.slice(1).toUpperCase() };
+          runs.push({ text: node.nodeValue, font: font });
+        } else if (node.nodeType === 1) {
+          var tag = node.tagName.toUpperCase();
+          if (tag === "BR") { runs.push({ text: "\n" }); return; }
+          walk(node, {
+            bold: fmt.bold || tag === "B",
+            underline: fmt.underline || tag === "U",
+            color: extractSafeColor(node) || fmt.color
+          });
+        }
+      });
+    })(template.content, {});
+    return runs.length ? { richText: runs } : (it.text || "");
+  }
+
+  // "2026-9-30" / "2026.09.30" / "2026년 9월 30일" / "26년 9월 30일" -> "2026/09/30";
+  // anything that isn't a full year-month-day is kept as typed
+  function excelDate(s) {
+    var m = String(s || "").trim().match(/^(\d{4}|\d{2})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*[.일]?$/);
+    if (!m) return String(s || "");
+    var y = m[1].length === 2 ? "20" + m[1] : m[1];
+    return y + "/" + ("0" + m[2]).slice(-2) + "/" + ("0" + m[3]).slice(-2);
+  }
+
+  // rough count of the lines a value wraps to in a column `width` characters wide: Korean and other
+  // full-width characters take about two '0'-widths each, and left-aligned cells lose their indent
+  var EXCEL_ROW_H = 18, EXCEL_LINE_H = 13.5; // 10pt text: one-line row height, height per extra line
+  function excelLineCount(value, width, indented) {
+    var text = value && value.richText ? value.richText.map(function (run) { return run.text; }).join("") : String(value == null ? "" : value);
+    var avail = Math.max(1, width - (indented ? 3 : 1));
+    return text.split("\n").reduce(function (n, para) {
+      var w = 0;
+      for (var k = 0; k < para.length; k++) w += /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(para[k]) ? 1.8 : 1;
+      return n + Math.max(1, Math.ceil(w / avail));
+    }, 0);
+  }
+  function excelHeightFor(lines) { return EXCEL_ROW_H + Math.max(0, lines - 1) * EXCEL_LINE_H; }
+
+  function exportExcel(rows, dateLabel) {
+    toast("엑셀 파일을 만드는 중입니다...");
+    loadExcelJs().then(function (ExcelJS) {
+      var wb = new ExcelJS.Workbook();
+      // panes frozen through the 2-line header and the project-info columns (A..C); printed
+      // landscape on A4, shrunk to one page wide, with the header repeated on every page
+      var ws = wb.addWorksheet("주간공정회의록", {
+        views: [{ state: "frozen", xSplit: 3, ySplit: 3 }],
+        pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+      });
+      ws.pageSetup.printTitlesRow = "2:3";
+      ws.headerFooter.oddFooter = "&C&P / &N"; // printed page number, e.g. "1 / 3", centered in the footer
+      // column A stacks Job No. (top line of the block) over 프로젝트명 (the merged lines below it),
+      // the same way the team's existing paper-style 회의록 lays it out
+      var COLS = [
+        ["Job No.", 30, "프로젝트명"], ["수량", 9], ["PO Del.", 12],
+        ["업무현황 (현재진행중)", 50], ["일정", 12], ["작성자", 10],
+        ["문제점 및 대책", 50], ["작성자", 10]
+      ];
+      var ROW_INFO_COLS = 3; // A..C describe the project row and get merged across its item lines
+      ws.columns = COLS.map(function (c) { return { width: c[1] }; });
+
+      ws.mergeCells(1, 1, 1, COLS.length);
+      var title = ws.getCell(1, 1);
+      title.value = "주간공정회의록 (" + excelDate(dateLabel) + ")";
+      title.font = { bold: true, size: 14 };
+      ws.getRow(1).height = 24;
+
+      // each project is drawn as its own boxed block: a dark outline around the whole block,
+      // light lines inside it
+      var inner = { style: "thin", color: { argb: "FFD9DEE3" } };
+      var divider = { style: "thin", color: { argb: "FF9AA5B1" } };
+      var outer = { style: "medium", color: { argb: "FF5B6B7D" } };
+      var GROUP_STARTS = { 4: true, 7: true }; // 업무현황 / 문제점 및 대책 column groups start here
+      var LEFT_COLS = { 4: true, 7: true };
+
+      // two-line header: only column A has a second label; every other header is merged across both
+      COLS.forEach(function (c, i) {
+        var col = i + 1;
+        ws.getCell(2, col).value = c[0];
+        if (c[2]) ws.getCell(3, col).value = c[2];
+        else ws.mergeCells(2, col, 3, col);
+      });
+      [2, 3].forEach(function (hr) {
+        ws.getRow(hr).height = 18;
+        for (var col = 1; col <= COLS.length; col++) {
+          var cell = ws.getCell(hr, col);
+          var stacked = !!COLS[col - 1][2];
+          cell.font = { bold: true };
+          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EDF3" } };
+          cell.border = {
+            top: (!stacked || hr === 2) ? outer : inner,
+            bottom: (!stacked || hr === 3) ? outer : inner,
+            left: col === 1 ? outer : inner,
+            right: col === COLS.length ? outer : inner
+          };
+        }
+      });
+
+      // a merged info cell (프로젝트명, 수량, PO Del.) that doesn't fit in the lines it spans spreads
+      // the missing height evenly across them
+      function fitMerged(value, col, top, bottom) {
+        var need = excelHeightFor(excelLineCount(value, COLS[col - 1][1], !!LEFT_COLS[col]));
+        var have = 0;
+        for (var fr = top; fr <= bottom; fr++) have += ws.getRow(fr).height;
+        if (need <= have) return;
+        var extra = (need - have) / (bottom - top + 1);
+        for (var fr2 = top; fr2 <= bottom; fr2++) ws.getRow(fr2).height += extra;
+      }
+
+      var r = 4;
+      rows.forEach(function (row) {
+        var status = row.status || [];
+        // place each issue on the same line as the 업무현황 item it sits beside on the board
+        var issueAt = {};
+        var lineCount = Math.max(status.length, 1);
+        (row.issues || []).forEach(function (it, idx) {
+          var slot = issueEffectiveSlot(it, idx);
+          while (issueAt[slot]) slot++;
+          issueAt[slot] = it;
+          lineCount = Math.max(lineCount, slot + 1);
+        });
+        var hasJobNo = !!String(row.jobNo || "").trim();
+        if (hasJobNo) lineCount = Math.max(lineCount, 2); // Job No. line + at least one 프로젝트명 line
+        var first = r, last = r + lineCount - 1;
+        var nameTop = hasJobNo ? first + 1 : first;
+        for (var i = 0; i < lineCount; i++) {
+          var line = ws.getRow(r + i);
+          var st = status[i], is = issueAt[i];
+          line.getCell(4).value = itemToExcelValue(st);
+          line.getCell(5).value = st ? (st.schedule || "") : "";
+          line.getCell(6).value = st ? (st.author || "") : "";
+          line.getCell(7).value = itemToExcelValue(is);
+          line.getCell(8).value = is ? (is.author || "") : "";
+        }
+        // each line grows to fit its tallest item cell (one line stays at the 18pt default) ...
+        for (var hr2 = first; hr2 <= last; hr2++) {
+          var maxLines = 1;
+          for (var hc = 4; hc <= COLS.length; hc++) {
+            maxLines = Math.max(maxLines, excelLineCount(ws.getCell(hr2, hc).value, COLS[hc - 1][1], !!LEFT_COLS[hc]));
+          }
+          ws.getRow(hr2).height = excelHeightFor(maxLines);
+        }
+        // ... and a merged info cell that still doesn't fit gets taller lines too (see fitMerged)
+        if (hasJobNo) fitMerged(row.jobNo, 1, first, first);
+        fitMerged(row.name || "", 1, nameTop, last);
+        fitMerged(row.qty || "", 2, first, last);
+        fitMerged(excelDate(row.poDel), 3, first, last);
+
+        if (hasJobNo) ws.getCell(first, 1).value = row.jobNo;
+        ws.getCell(nameTop, 1).value = row.name || "";
+        ws.getCell(first, 2).value = row.qty || "";
+        ws.getCell(first, 3).value = excelDate(row.poDel);
+        if (last > nameTop) ws.mergeCells(nameTop, 1, last, 1);
+        if (lineCount > 1) {
+          for (var mc = 2; mc <= ROW_INFO_COLS; mc++) ws.mergeCells(first, mc, last, mc);
+        }
+        // styled after merging: ExcelJS gives every cell of a merged range one shared style, so a
+        // merged range must carry both of its outline edges (top and bottom) on every cell
+        for (var rr = first; rr <= last; rr++) {
+          for (var c = 1; c <= COLS.length; c++) {
+            var cell = ws.getCell(rr, c);
+            var isInfo = c <= ROW_INFO_COLS;
+            var top, bottom;
+            if (c === 1 && hasJobNo) {
+              var isJobLine = rr === first;
+              top = isJobLine ? outer : inner;
+              bottom = isJobLine ? inner : outer;
+            } else {
+              top = (isInfo || rr === first) ? outer : inner;
+              bottom = (isInfo || rr === last) ? outer : inner;
+            }
+            cell.border = {
+              top: top,
+              bottom: bottom,
+              left: c === 1 ? outer : (GROUP_STARTS[c] ? divider : inner),
+              right: c === COLS.length ? outer : (GROUP_STARTS[c + 1] ? divider : inner)
+            };
+            cell.alignment = {
+              vertical: "middle", wrapText: true,
+              horizontal: LEFT_COLS[c] ? "left" : "center", indent: LEFT_COLS[c] ? 1 : 0
+            };
+            if (isInfo) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F6F9" } };
+            if (c === 1) cell.font = { bold: true };
+          }
+        }
+        r += lineCount;
+      });
+
+      // body + header text at 10pt (the title row keeps its larger size); rich-text runs carry
+      // their own fonts, so each run needs the size too or it falls back to Excel's 11pt default
+      ws.eachRow(function (line, rowNum) {
+        if (rowNum === 1) return;
+        line.eachCell({ includeEmpty: true }, function (cell) {
+          cell.font = Object.assign({}, cell.font, { size: 10 });
+          var v = cell.value;
+          if (v && v.richText) {
+            cell.value = { richText: v.richText.map(function (run) {
+              return { text: run.text, font: Object.assign({}, run.font, { size: 10 }) };
+            }) };
+          }
+        });
+      });
+
+      return wb.xlsx.writeBuffer();
+    }).then(function (buf) {
+      var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "주간공정회의록_" + dateLabel + ".xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }).catch(function (err) {
+      toast("엑셀 내보내기에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+    });
+  }
+
   /* ================= drag-to-reorder / re-position (업무현황 · 문제점 및 대책) ================= */
   var dragState = null; // { cell, rowId, listKey, itemId, pointerId, targetCell }
 
@@ -1711,7 +1973,8 @@
                     '<button class="chip-btn" type="button" data-action="toggle-calendar" title="달력에서 날짜 선택">📅</button>' +
                     renderCalendarPopover() +
                   '</span> ' +
-                  (!archive ? '<button class="chip-btn" type="button" data-action="save-snapshot" title="현재 화면을 오늘 날짜로 저장">💾 저장</button>' : "") +
+                  (!archive ? '<button class="chip-btn" type="button" data-action="save-snapshot" title="현재 화면을 오늘 날짜로 저장">💾 저장</button> ' : "") +
+                  '<button class="chip-btn export-btn" type="button" data-action="export-excel" title="지금 보이는 항목을 엑셀 파일로 저장">' + EXCEL_ICON_SVG + '내보내기</button>' +
                 '</span>') +
           '</div>' +
           '<div class="identity-group">' +
@@ -2622,6 +2885,14 @@
           toast("삭제에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
         });
         render();
+        break;
+      }
+      case "export-excel": {
+        var exArchive = ui.viewingArchive ? (state.archives || {})[ui.viewingArchive] : null;
+        var exSource = exArchive ? (exArchive.rows || []) : (state.rows || []);
+        var exRows = filteredRows(exSource);
+        if (!exRows.length) { toast("내보낼 항목이 없습니다."); break; }
+        exportExcel(exRows, exArchive ? ui.viewingArchive : todayStr());
         break;
       }
       case "new-row-toggle":
