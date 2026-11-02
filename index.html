@@ -1531,9 +1531,59 @@
   }
   function excelHeightFor(lines) { return EXCEL_ROW_H + Math.max(0, lines - 1) * EXCEL_LINE_H; }
 
+  var XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+  // Asks where to save via the browser's "Save as" dialog (Chrome/Edge). Resolves to a file
+  // handle, to null when the dialog isn't available (fall back to a normal download), or to
+  // false when the user cancelled. Must run straight from the click: the browser only allows
+  // the dialog right after a user gesture, so it opens before ExcelJS is loaded / the file built.
+  function pickExcelSaveTarget(fileName) {
+    if (!window.showSaveFilePicker) return Promise.resolve(null);
+    return window.showSaveFilePicker({
+      id: "wpb-excel-export", // the browser reopens the dialog in the last folder used for this id
+      startIn: "documents",
+      suggestedName: fileName,
+      types: [{ description: "Excel 파일", accept: { [XLSX_MIME]: [".xlsx"] } }]
+    }).catch(function (err) {
+      if (err && err.name === "AbortError") return false;
+      return null; // e.g. blocked by the browser — just download instead
+    });
+  }
+
   function exportExcel(rows, dateLabel) {
-    toast("엑셀 파일을 만드는 중입니다...");
-    loadExcelJs().then(function (ExcelJS) {
+    var fileName = "주간공정회의록_" + dateLabel + ".xlsx";
+    pickExcelSaveTarget(fileName).then(function (handle) {
+      if (handle === false) return; // save dialog cancelled
+      toast("엑셀 파일을 만드는 중입니다...");
+      return buildExcelBuffer(rows, dateLabel).then(function (buf) {
+        var blob = new Blob([buf], { type: XLSX_MIME });
+        if (handle) {
+          return handle.createWritable().then(function (w) {
+            return w.write(blob).then(function () { return w.close(); });
+          }).then(function () {
+            toast("저장했습니다: " + handle.name);
+          }, function (err) {
+            if (err && err.name === "NoModificationAllowedError") {
+              throw new Error("파일이 엑셀에서 열려 있으면 닫고 다시 시도해 주세요");
+            }
+            throw err;
+          });
+        }
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      });
+    }).catch(function (err) {
+      toast("엑셀 내보내기에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+    });
+  }
+
+  function buildExcelBuffer(rows, dateLabel) {
+    return loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook();
       // panes frozen through the 2-line header and the project-info columns (A..C); printed
       // landscape on A4, shrunk to one page wide, with the header repeated on every page
@@ -1697,17 +1747,6 @@
       });
 
       return wb.xlsx.writeBuffer();
-    }).then(function (buf) {
-      var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "주간공정회의록_" + dateLabel + ".xlsx";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    }).catch(function (err) {
-      toast("엑셀 내보내기에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
     });
   }
 
