@@ -1612,7 +1612,9 @@
       // digit of the workbook font, 8px in Korean Excel (맑은 고딕 11), at 0.75pt per px. Printed
       // columns come out slightly wider than that (67% already pushed column H onto its own pages
       // on a SINDOH N502, 66% fit), so the scale keeps 3 points of headroom for other printers.
-      var MARGINS = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }; // inches
+      // narrow margins (Excel's defaults are 0.7 / 0.75in) give a larger print scale and more rows
+      // per page; the footer page number sits in the bottom margin
+      var MARGINS = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 }; // inches
       var A4_LONG = 841.89, A4_SHORT = 595.28; // pt
       var sheetWidthPt = COLS.reduce(function (s, c) { return s + c[1] * 8 * 0.75; }, 0);
       var printScale = Math.min(100, Math.floor((A4_LONG - (MARGINS.left + MARGINS.right) * 72) / sheetWidthPt * 100) - 3);
@@ -1620,8 +1622,11 @@
       ws.pageSetup.margins = MARGINS;
       ws.pageSetup.horizontalCentered = true;
       // body height that fits on one printed page, in sheet points: the printable height at this
-      // scale, less a little slack for Excel's pixel rounding, less the repeated header rows 2..3
+      // scale, less 3% slack for Excel's print rounding (measured: pages overflowed at ~98.5%),
+      // less the repeated header rows 2..3
       var HEADER_ROWS_H = 36, TITLE_ROW_H = 24;
+      var MIN_PART_H = 60; // smallest part of a split project block (about 3 lines)
+      var MIN_LINE_CUT_H = 48; // smallest first part of an item line cut across a page edge (3 lines)
       var pageBodyH = (A4_SHORT - (MARGINS.top + MARGINS.bottom) * 72) / (printScale / 100) * 0.97 - HEADER_ROWS_H;
 
       ws.mergeCells(1, 1, 1, COLS.length);
@@ -1687,6 +1692,67 @@
       function infoText(row, combined) {
         var jobNo = String(row.jobNo || "").trim();
         return combined && jobNo ? jobNo + "\n" + (row.name || "") : (row.name || "");
+      }
+
+      // an item cell's value as paragraphs (split at its line breaks), each a list of rich-text runs
+      function valueParagraphs(v) {
+        var runs = v && v.richText ? v.richText : [{ text: v == null ? "" : String(v) }];
+        var paras = [[]];
+        runs.forEach(function (run) {
+          String(run.text).split("\n").forEach(function (part, i) {
+            if (i > 0) paras.push([]);
+            if (part) paras[paras.length - 1].push(Object.assign({}, run, { text: part }));
+          });
+        });
+        return paras;
+      }
+      function paragraphsValue(paras, rich) {
+        if (!rich) return paras.map(function (p) { return p.map(function (run) { return run.text; }).join(""); }).join("\n");
+        var runs = [];
+        paras.forEach(function (p, i) {
+          if (i > 0) runs.push({ text: "\n" });
+          runs.push.apply(runs, p);
+        });
+        return runs.length ? { richText: runs } : "";
+      }
+
+      // plans cutting item line rowNum so its first part is at most `room` tall: 업무현황 (D) and
+      // 문제점 및 대책 (G) are each cut at a paragraph boundary. null when there's no useful cut —
+      // nothing would continue, or the first part would be under MIN_LINE_CUT_H
+      function planLineSplit(rowNum, room) {
+        var cut = {}, headLines = 1, tailLines = 1, cutsSomething = false;
+        var fits = [4, 7].every(function (c) {
+          var v = ws.getCell(rowNum, c).value, rich = !!(v && v.richText), width = COLS[c - 1][1];
+          var paras = valueParagraphs(v);
+          var k = paras.length; // paragraphs kept on this page
+          while (k > 0 && excelHeightFor(excelLineCount(paragraphsValue(paras.slice(0, k), rich), width, true)) > room) k--;
+          if (k === 0) return false;
+          var head = paragraphsValue(paras.slice(0, k), rich), tail = paragraphsValue(paras.slice(k), rich);
+          if (k < paras.length) cutsSomething = true;
+          cut[c] = [head, tail, k < paras.length];
+          headLines = Math.max(headLines, excelLineCount(head, width, true));
+          tailLines = Math.max(tailLines, excelLineCount(tail, width, true));
+          return true;
+        });
+        if (!fits || !cutsSomething || excelHeightFor(headLines) < MIN_LINE_CUT_H) return null;
+        return { cut: cut, headH: excelHeightFor(headLines), tailH: excelHeightFor(tailLines) };
+      }
+      // applies a planLineSplit cut: the block's rows below move down one, and the continuation
+      // row repeats 일정 / 작성자 next to whatever continues
+      function applyLineSplit(rowNum, plan, blockLast) {
+        for (var rr = blockLast; rr > rowNum; rr--) {
+          for (var c = 4; c <= COLS.length; c++) ws.getCell(rr + 1, c).value = ws.getCell(rr, c).value;
+          ws.getRow(rr + 1).height = ws.getRow(rr).height;
+        }
+        var next = rowNum + 1;
+        [[4, [5, 6]], [7, [8]]].forEach(function (g) {
+          var c = g[0], cut = plan.cut[c];
+          ws.getCell(rowNum, c).value = cut[0];
+          ws.getCell(next, c).value = cut[2] ? cut[1] : "";
+          g[1].forEach(function (mc) { ws.getCell(next, mc).value = cut[2] ? ws.getCell(rowNum, mc).value : ""; });
+        });
+        ws.getRow(rowNum).height = plan.headH;
+        ws.getRow(next).height = plan.tailH;
       }
 
       // draws one boxed project block (or one page's part of a split block) over rows top..bottom.
@@ -1772,29 +1838,57 @@
         fitMerged(row.qty || "", 2, first, last);
         fitMerged(excelDate(row.poDel), 3, first, last);
 
-        // page placement: a block that fits on a page is never cut — if the rest of the current
-        // page is too short it moves whole to the next page. A block taller than a page is split
-        // at the page edges, and every part repeats Job No. / 프로젝트명 / 수량 / PO Del.
+        // page placement, filling each page as far as it goes: a block that doesn't fit in the
+        // rest of the page is split at a row edge and continues on the next page, every part
+        // repeating Job No. / 프로젝트명 / 수량 / PO Del. Only when the part left on this page or
+        // the part carried over would be too small to read well (a stray row) does the block move
+        // to the next page instead — whole, if it fits on one page.
         var blockH = rowsHeight(first, last);
+        var minPart = Math.max(MIN_PART_H,
+          excelHeightFor(excelLineCount(infoText(row, true), COLS[0][1], false)),
+          excelHeightFor(excelLineCount(row.qty || "", COLS[1][1], false)),
+          excelHeightFor(excelLineCount(excelDate(row.poDel), COLS[2][1], false)));
+        if (pageUsed + blockH > pageBodyH) {
+          // what would go on this page: the whole lines that fit, plus the first part of the line
+          // crossing the page edge when that line can be cut (see planLineSplit)
+          var fitH = 0;
+          for (var fr = first; fr <= last; fr++) {
+            var frH = ws.getRow(fr).height;
+            if (pageUsed + fitH + frH > pageBodyH) {
+              var firstCut = planLineSplit(fr, pageBodyH - pageUsed - fitH);
+              if (firstCut) fitH += firstCut.headH;
+              break;
+            }
+            fitH += frH;
+          }
+          if (fitH < minPart || (blockH <= pageBodyH && blockH - fitH < minPart)) breakBefore(first);
+        }
         var pieces;
         if (pageUsed + blockH <= pageBodyH) {
           pieces = [[first, last]];
           pageUsed += blockH;
-        } else if (blockH <= pageBodyH) {
-          breakBefore(first);
-          pieces = [[first, last]];
-          pageUsed = blockH;
         } else {
-          // too little room left for a useful first part (under a third of a page) → start fresh
-          if (pageBodyH - pageUsed < pageBodyH / 3) breakBefore(first);
           pieces = [];
           var pieceTop = first;
           for (var pr = first; pr <= last; pr++) {
             var lineH = ws.getRow(pr).height;
-            if (pageUsed > 0 && pageUsed + lineH > pageBodyH) {
-              if (pr > pieceTop) pieces.push([pieceTop, pr - 1]);
-              breakBefore(pr);
-              pieceTop = pr;
+            if (pageUsed + lineH > pageBodyH) {
+              // a tall line is cut so its first paragraphs fill this page and the rest continue on
+              // the next one (rows can't break across pages in Excel, so it becomes two rows)
+              var cut = planLineSplit(pr, pageBodyH - pageUsed);
+              if (cut) {
+                applyLineSplit(pr, cut, last);
+                last++;
+                pieces.push([pieceTop, pr]);
+                breakBefore(pr + 1);
+                pieceTop = pr + 1;
+                continue; // the continuation row is placed on the new page by the next iteration
+              }
+              if (pageUsed > 0) {
+                if (pr > pieceTop) pieces.push([pieceTop, pr - 1]);
+                breakBefore(pr);
+                pieceTop = pr;
+              }
             }
             pageUsed += lineH;
           }
@@ -1810,7 +1904,7 @@
         }
         var split = pieces.length > 1;
         pieces.forEach(function (p) { drawBlockPart(row, hasJobNo && !split, p[0], p[1]); });
-        r += lineCount;
+        r = last + 1; // lines cut across a page edge added rows
       });
 
       // body + header text at 10pt (the title row keeps its larger size); rich-text runs carry
