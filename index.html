@@ -360,6 +360,42 @@
   details.activity summary::-webkit-details-marker { display: none; }
   details.activity summary:before { content: "▸"; font-size: 10px; transition: transform .15s; }
   details.activity[open] summary:before { transform: rotate(90deg); }
+
+  /* ---------- notice (공지사항 marquee, to the right of 최근 활동) ---------- */
+  .activity-row { position: relative; margin: 6px 0 18px; min-height: 22px; }
+  .activity-row details.activity { margin: 0; }
+  /* right part of the 최근 활동 line, starting under the filter tabs (전체 …) — left offset set by
+     syncNoticeMarquee, never over the 최근 활동 text */
+  .activity-row > .notice-slot { position: absolute; top: -3px; right: 0; left: var(--notice-left, 50%); }
+  .notice-bar {
+    display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 4px 0 10px;
+    border-radius: 999px; background: var(--warn-soft); color: var(--ink); font-size: 12.5px; min-width: 0;
+  }
+  .notice-icon { color: var(--warn); font-size: 12px; font-weight: 700; white-space: nowrap; flex: none; }
+  .notice-viewport { position: relative; flex: 1; min-width: 0; height: 100%; overflow: hidden; }
+  .notice-track {
+    position: absolute; top: 50%; left: 0; white-space: nowrap; will-change: transform;
+    transform: translate(var(--from, 0), -50%);
+    animation: notice-scroll var(--dur, 20s) linear infinite;
+  }
+  .notice-viewport:hover .notice-track { animation-play-state: paused; }
+  @keyframes notice-scroll {
+    from { transform: translate(var(--from, 0), -50%); }
+    to { transform: translate(var(--to, -100%), -50%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .notice-track { animation: none; transform: translateY(-50%); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  }
+  .notice-bar .icon-btn { font-size: 13px; flex: none; }
+  .notice-bar.editing { background: var(--surface); border: 1px solid var(--warn); padding-right: 6px; gap: 6px; }
+  .notice-bar.editing input {
+    flex: 1; min-width: 0; border: none; background: transparent; color: var(--ink); font: inherit; outline: none;
+  }
+  .notice-add {
+    border: 1px dashed var(--line); background: none; color: var(--ink-muted); border-radius: 999px;
+    height: 24px; padding: 0 12px; font-size: 12px; cursor: pointer;
+  }
+  .notice-add:hover { border-color: var(--warn); color: var(--warn); }
   .activity-scroll { max-height: 114px; overflow-y: auto; margin-top: 8px; }
   .activity-list { margin: 0; padding: 0 2px 0 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
   .activity-list li { font-size: 12.5px; color: var(--ink-muted); display: flex; gap: 8px; }
@@ -623,11 +659,13 @@
   "use strict";
 
   /* ================= seed / boot ================= */
-  var state = { rows: [], activity: [], archives: {}, leaves: {}, weekOf: "", updatedAt: "" };
+  var state = { rows: [], activity: [], archives: {}, leaves: {}, notice: null, weekOf: "", updatedAt: "" };
   var dataLoaded = false;
 
   var ui = {
     myName: "",
+    noticeEdit: false,      // the 공지 input is open
+    noticeDraft: null,      // its in-progress text, kept across re-renders
     filterText: "",
     filterCategory: "all",
     sortBy: "created",
@@ -700,6 +738,7 @@
   var activityRef = firebase.database().ref("board/activity");
   var archivesRef = firebase.database().ref("board/archives");
   var leavesRef = firebase.database().ref("board/leaves");
+  var noticeRef = firebase.database().ref("board/notice"); // { text, author, ts } — the shared 공지사항
 
   /* ================= passcode gate ================= */
   // App data only starts syncing after anonymous Firebase auth succeeds (required by the
@@ -746,6 +785,14 @@
       state.leaves = snap.val() || {};
       markLoaded("leaves");
     }, onDbError);
+
+    // the notice is optional: if it can't be read, the board still works (no onDbError lockout)
+    noticeRef.on("value", function (snap) {
+      state.notice = snap.val();
+      render();
+    }, function (err) {
+      console.warn("notice unavailable", err);
+    });
 
     pruneOldArchives();
   }).catch(function (err) {
@@ -1205,6 +1252,91 @@
       '<details class="activity"><summary>최근 활동 ' + items.length + '건</summary>' +
       '<div class="activity-scroll"><ul class="activity-list">' + lis + '</ul></div></details>'
     );
+  }
+
+  // 공지사항: a one-line notice scrolling right → left beside 최근 활동, shared through board/notice
+  function noticeText() {
+    return state.notice ? String(state.notice.text || "").trim() : "";
+  }
+  function renderNotice() {
+    var text = noticeText();
+    var inner;
+    if (ui.noticeEdit && canWriteNow) {
+      var draft = ui.noticeDraft != null ? ui.noticeDraft : text;
+      inner =
+        '<div class="notice-bar editing">' +
+          '<span class="notice-icon">공지</span>' +
+          '<input id="notice-input" maxlength="200" placeholder="공지사항 / 알림사항 (비우고 저장하면 삭제)" value="' + escapeHtml(draft) + '">' +
+          '<button class="chip-btn" data-action="notice-save">저장</button>' +
+          '<button class="icon-btn" data-action="notice-cancel" title="취소">✕</button>' +
+        '</div>';
+    } else if (text) {
+      var by = state.notice.author ? " — " + state.notice.author + (state.notice.ts ? " · " + timeAgo(state.notice.ts) : "") : "";
+      inner =
+        '<div class="notice-bar" title="' + escapeHtml(text + by) + '">' +
+          '<span class="notice-icon">📢 공지</span>' +
+          '<div class="notice-viewport"><span class="notice-track">' + escapeHtml(text) + '</span></div>' +
+          (canWriteNow ? '<button class="icon-btn" data-action="notice-edit" title="공지 수정">✎</button>' : "") +
+        '</div>';
+    } else if (canWriteNow) {
+      inner = '<button class="notice-add" data-action="notice-edit">+ 공지 작성</button>';
+    } else {
+      return "";
+    }
+    return '<div class="notice-slot">' + inner + '</div>';
+  }
+
+  // Sizes the scroll to the actual text/box widths (constant speed whatever the length) and pins
+  // its phase to the clock: render() rebuilds the whole board on every update from anyone, and a
+  // fresh element would otherwise restart the text from the right edge each time.
+  var NOTICE_SPEED = 45; // px per second
+  function syncNoticeMarquee() {
+    var slot = document.querySelector(".activity-row > .notice-slot");
+    if (slot) {
+      var rowLeft = slot.parentNode.getBoundingClientRect().left;
+      var left = 0;
+      // start under the filter tabs when they sit on the toolbar line above ...
+      var tabs = document.querySelector(".toolbar .tabs");
+      if (tabs) left = tabs.getBoundingClientRect().left - rowLeft;
+      // ... but always clear of the 최근 활동 text (the summary is a full-width flex row, so
+      // measure where its text actually ends)
+      var summary = slot.parentNode.querySelector("details.activity summary");
+      if (summary) {
+        var range = document.createRange();
+        range.selectNodeContents(summary);
+        left = Math.max(left, range.getBoundingClientRect().right - rowLeft + 18);
+      }
+      slot.style.setProperty("--notice-left", Math.ceil(left) + "px");
+    }
+    var track = document.querySelector(".notice-track");
+    if (!track) return;
+    var boxW = track.parentNode.clientWidth, textW = track.scrollWidth;
+    var dur = (boxW + textW) / NOTICE_SPEED;
+    track.style.setProperty("--from", boxW + "px");
+    track.style.setProperty("--to", -textW + "px");
+    track.style.animationDuration = dur + "s";
+    track.style.animationDelay = -((Date.now() / 1000) % dur) + "s";
+  }
+  var noticeResizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(noticeResizeTimer);
+    noticeResizeTimer = setTimeout(syncNoticeMarquee, 150);
+  });
+
+  function saveNotice() {
+    var input = document.getElementById("notice-input");
+    var text = input ? input.value.trim() : "";
+    var prev = noticeText();
+    ui.noticeEdit = false;
+    ui.noticeDraft = null;
+    render();
+    if (text === prev) return;
+    var op = text ? noticeRef.set({ text: text, author: whoAmI(), ts: nowIso() }) : noticeRef.remove();
+    op.then(function () {
+      pushActivity(whoAmI() + "님이 공지사항을 " + (text ? (prev ? "수정" : "등록") : "삭제") + "했습니다.");
+    }).catch(function (err) {
+      toast("공지 저장에 실패했습니다" + (err && err.message ? ": " + err.message : "."));
+    });
   }
 
   function renderNewRowForm() {
@@ -2067,6 +2199,8 @@
   // concurrent change from another user (which also calls render(), via the rowsRef listener)
   // would wipe out whatever a person was mid-typing in an open add/edit form.
   function captureBoardDrafts() {
+    var noticeInput = document.getElementById("notice-input");
+    if (ui.noticeEdit && noticeInput) ui.noticeDraft = noticeInput.value;
     if (ui.newRowOpen) {
       var nrNameEl = document.getElementById("nr-name");
       if (nrNameEl) {
@@ -2225,7 +2359,7 @@
           renderSortbar() +
           (canWriteNow ? '<button class="primary-btn" data-action="new-row-toggle">+ 새 항목</button>' : "") +
         '</div>' +
-        renderActivity() +
+        '<div class="activity-row">' + renderActivity() + renderNotice() + '</div>' +
         (canWriteNow ? renderNewRowForm() : "") +
         '<div class="board">' +
           (rows.length ? rows.map(renderCard).join("") : '<div class="empty-hint">조건에 맞는 항목이 없습니다.</div>') +
@@ -2233,6 +2367,7 @@
       ));
 
     document.getElementById("app").innerHTML = html;
+    syncNoticeMarquee();
 
     // restore focus + caret onto whatever was focused before the rebuild above, so a
     // concurrent update from another user doesn't knock the cursor out of the field
@@ -3110,6 +3245,21 @@
         exportExcel(exRows, exArchive ? ui.viewingArchive : todayStr());
         break;
       }
+      case "notice-edit":
+        ui.noticeEdit = true;
+        ui.noticeDraft = null;
+        render();
+        var noticeEl = document.getElementById("notice-input");
+        if (noticeEl) { noticeEl.focus(); noticeEl.setSelectionRange(noticeEl.value.length, noticeEl.value.length); }
+        break;
+      case "notice-cancel":
+        ui.noticeEdit = false;
+        ui.noticeDraft = null;
+        render();
+        break;
+      case "notice-save":
+        saveNotice();
+        break;
       case "new-row-toggle":
         ui.newRowOpen = !ui.newRowOpen;
         if (!ui.newRowOpen) ui.newRowDraft = null;
@@ -3373,6 +3523,10 @@
   });
 
   document.addEventListener("keydown", function (e) {
+    if (e.target.id === "notice-input" && !e.isComposing) {
+      if (e.key === "Enter") { e.preventDefault(); saveNotice(); return; }
+      if (e.key === "Escape") { ui.noticeEdit = false; ui.noticeDraft = null; render(); return; }
+    }
     if (e.key === "Escape") {
       var leaveModalBackdrop = document.querySelector(".leave-modal-backdrop");
       if (leaveModalBackdrop) { leaveModalBackdrop.click(); return; }
