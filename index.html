@@ -1519,7 +1519,10 @@
 
   // rough count of the lines a value wraps to in a column `width` characters wide: Korean and other
   // full-width characters take about two '0'-widths each, and left-aligned cells lose their indent
-  var EXCEL_ROW_H = 18, EXCEL_LINE_H = 13.5; // 10pt text: one-line row height, height per extra line
+  // 10pt text: one-line row height, height per extra line. Excel itself fits 13.5pt per line on
+  // screen, but printed lines (measured at the 64% print scale) take ~14.7pt, so 13.5 clipped the
+  // last lines of tall cells on paper
+  var EXCEL_ROW_H = 18, EXCEL_LINE_H = 15;
   function excelLineCount(value, width, indented) {
     var text = value && value.richText ? value.richText.map(function (run) { return run.text; }).join("") : String(value == null ? "" : value);
     var avail = Math.max(1, width - (indented ? 3 : 1));
@@ -1586,10 +1589,10 @@
     return loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook();
       // panes frozen through the 2-line header and the project-info columns (A..C); printed
-      // landscape on A4, shrunk to one page wide, with the header repeated on every page
+      // landscape on A4 with the header repeated on every page (scale + margins set below)
       var ws = wb.addWorksheet("주간공정회의록", {
         views: [{ state: "frozen", xSplit: 3, ySplit: 3 }],
-        pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+        pageSetup: { paperSize: 9, orientation: "landscape" }
       });
       ws.pageSetup.printTitlesRow = "2:3";
       ws.headerFooter.oddFooter = "&C&P / &N"; // printed page number, e.g. "1 / 3", centered in the footer
@@ -1603,11 +1606,29 @@
       var ROW_INFO_COLS = 3; // A..C describe the project row and get merged across its item lines
       ws.columns = COLS.map(function (c) { return { width: c[1] }; });
 
+      // Printed at a fixed scale rather than "fit to 1 page wide", because Excel ignores manual
+      // page breaks under fit-to-page, and the breaks are placed here so no project block gets cut
+      // at a page edge. The scale is the one fit-to-width would pick: a column width unit is one
+      // digit of the workbook font, 8px in Korean Excel (맑은 고딕 11), at 0.75pt per px. Printed
+      // columns come out slightly wider than that (67% already pushed column H onto its own pages
+      // on a SINDOH N502, 66% fit), so the scale keeps 3 points of headroom for other printers.
+      var MARGINS = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }; // inches
+      var A4_LONG = 841.89, A4_SHORT = 595.28; // pt
+      var sheetWidthPt = COLS.reduce(function (s, c) { return s + c[1] * 8 * 0.75; }, 0);
+      var printScale = Math.min(100, Math.floor((A4_LONG - (MARGINS.left + MARGINS.right) * 72) / sheetWidthPt * 100) - 3);
+      ws.pageSetup.scale = printScale;
+      ws.pageSetup.margins = MARGINS;
+      ws.pageSetup.horizontalCentered = true;
+      // body height that fits on one printed page, in sheet points: the printable height at this
+      // scale, less a little slack for Excel's pixel rounding, less the repeated header rows 2..3
+      var HEADER_ROWS_H = 36, TITLE_ROW_H = 24;
+      var pageBodyH = (A4_SHORT - (MARGINS.top + MARGINS.bottom) * 72) / (printScale / 100) * 0.97 - HEADER_ROWS_H;
+
       ws.mergeCells(1, 1, 1, COLS.length);
       var title = ws.getCell(1, 1);
       title.value = "주간공정회의록 (" + excelDate(dateLabel) + ")";
       title.font = { bold: true, size: 14 };
-      ws.getRow(1).height = 24;
+      ws.getRow(1).height = TITLE_ROW_H;
 
       // each project is drawn as its own boxed block: a dark outline around the whole block,
       // light lines inside it
@@ -1652,6 +1673,66 @@
         for (var fr2 = top; fr2 <= bottom; fr2++) ws.getRow(fr2).height += extra;
       }
 
+      var pageUsed = TITLE_ROW_H; // body height used on the current page; the title row only prints on page 1
+      function rowsHeight(top, bottom) {
+        var h = 0;
+        for (var hr = top; hr <= bottom; hr++) h += ws.getRow(hr).height;
+        return h;
+      }
+      function breakBefore(rowNum) {
+        if (rowNum > 4) ws.getRow(rowNum - 1).addPageBreak(); // ExcelJS breaks after the given row
+        pageUsed = 0;
+      }
+      // column A text: Job No. and 프로젝트명 stacked in one cell (used when they can't sit on lines of their own)
+      function infoText(row, combined) {
+        var jobNo = String(row.jobNo || "").trim();
+        return combined && jobNo ? jobNo + "\n" + (row.name || "") : (row.name || "");
+      }
+
+      // draws one boxed project block (or one page's part of a split block) over rows top..bottom.
+      // jobLine: Job No. gets the top line to itself with 프로젝트명 merged below; otherwise both
+      // share one merged cell, Job No. on the first line
+      function drawBlockPart(row, jobLine, first, last) {
+        var nameTop = jobLine ? first + 1 : first;
+        if (jobLine) ws.getCell(first, 1).value = row.jobNo;
+        ws.getCell(nameTop, 1).value = infoText(row, !jobLine);
+        ws.getCell(first, 2).value = row.qty || "";
+        ws.getCell(first, 3).value = excelDate(row.poDel);
+        if (last > nameTop) ws.mergeCells(nameTop, 1, last, 1);
+        if (last > first) {
+          for (var mc = 2; mc <= ROW_INFO_COLS; mc++) ws.mergeCells(first, mc, last, mc);
+        }
+        // styled after merging: ExcelJS gives every cell of a merged range one shared style, so a
+        // merged range must carry both of its outline edges (top and bottom) on every cell
+        for (var rr = first; rr <= last; rr++) {
+          for (var c = 1; c <= COLS.length; c++) {
+            var cell = ws.getCell(rr, c);
+            var isInfo = c <= ROW_INFO_COLS;
+            var top, bottom;
+            if (c === 1 && jobLine) {
+              var isJobLine = rr === first;
+              top = isJobLine ? outer : inner;
+              bottom = isJobLine ? inner : outer;
+            } else {
+              top = (isInfo || rr === first) ? outer : inner;
+              bottom = (isInfo || rr === last) ? outer : inner;
+            }
+            cell.border = {
+              top: top,
+              bottom: bottom,
+              left: c === 1 ? outer : (GROUP_STARTS[c] ? divider : inner),
+              right: c === COLS.length ? outer : (GROUP_STARTS[c + 1] ? divider : inner)
+            };
+            cell.alignment = {
+              vertical: "middle", wrapText: true,
+              horizontal: LEFT_COLS[c] ? "left" : "center", indent: LEFT_COLS[c] ? 1 : 0
+            };
+            if (isInfo) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F6F9" } };
+            if (c === 1) cell.font = { bold: true };
+          }
+        }
+      }
+
       var r = 4;
       rows.forEach(function (row) {
         var status = row.status || [];
@@ -1691,43 +1772,44 @@
         fitMerged(row.qty || "", 2, first, last);
         fitMerged(excelDate(row.poDel), 3, first, last);
 
-        if (hasJobNo) ws.getCell(first, 1).value = row.jobNo;
-        ws.getCell(nameTop, 1).value = row.name || "";
-        ws.getCell(first, 2).value = row.qty || "";
-        ws.getCell(first, 3).value = excelDate(row.poDel);
-        if (last > nameTop) ws.mergeCells(nameTop, 1, last, 1);
-        if (lineCount > 1) {
-          for (var mc = 2; mc <= ROW_INFO_COLS; mc++) ws.mergeCells(first, mc, last, mc);
-        }
-        // styled after merging: ExcelJS gives every cell of a merged range one shared style, so a
-        // merged range must carry both of its outline edges (top and bottom) on every cell
-        for (var rr = first; rr <= last; rr++) {
-          for (var c = 1; c <= COLS.length; c++) {
-            var cell = ws.getCell(rr, c);
-            var isInfo = c <= ROW_INFO_COLS;
-            var top, bottom;
-            if (c === 1 && hasJobNo) {
-              var isJobLine = rr === first;
-              top = isJobLine ? outer : inner;
-              bottom = isJobLine ? inner : outer;
-            } else {
-              top = (isInfo || rr === first) ? outer : inner;
-              bottom = (isInfo || rr === last) ? outer : inner;
+        // page placement: a block that fits on a page is never cut — if the rest of the current
+        // page is too short it moves whole to the next page. A block taller than a page is split
+        // at the page edges, and every part repeats Job No. / 프로젝트명 / 수량 / PO Del.
+        var blockH = rowsHeight(first, last);
+        var pieces;
+        if (pageUsed + blockH <= pageBodyH) {
+          pieces = [[first, last]];
+          pageUsed += blockH;
+        } else if (blockH <= pageBodyH) {
+          breakBefore(first);
+          pieces = [[first, last]];
+          pageUsed = blockH;
+        } else {
+          // too little room left for a useful first part (under a third of a page) → start fresh
+          if (pageBodyH - pageUsed < pageBodyH / 3) breakBefore(first);
+          pieces = [];
+          var pieceTop = first;
+          for (var pr = first; pr <= last; pr++) {
+            var lineH = ws.getRow(pr).height;
+            if (pageUsed > 0 && pageUsed + lineH > pageBodyH) {
+              if (pr > pieceTop) pieces.push([pieceTop, pr - 1]);
+              breakBefore(pr);
+              pieceTop = pr;
             }
-            cell.border = {
-              top: top,
-              bottom: bottom,
-              left: c === 1 ? outer : (GROUP_STARTS[c] ? divider : inner),
-              right: c === COLS.length ? outer : (GROUP_STARTS[c + 1] ? divider : inner)
-            };
-            cell.alignment = {
-              vertical: "middle", wrapText: true,
-              horizontal: LEFT_COLS[c] ? "left" : "center", indent: LEFT_COLS[c] ? 1 : 0
-            };
-            if (isInfo) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F6F9" } };
-            if (c === 1) cell.font = { bold: true };
+            pageUsed += lineH;
           }
+          pieces.push([pieceTop, last]);
+          // each part shows "Job No.⏎프로젝트명" in one merged cell, so it needs room for that
+          pieces.forEach(function (p) {
+            fitMerged(infoText(row, true), 1, p[0], p[1]);
+            fitMerged(row.qty || "", 2, p[0], p[1]);
+            fitMerged(excelDate(row.poDel), 3, p[0], p[1]);
+          });
+          var lastPiece = pieces[pieces.length - 1];
+          pageUsed = rowsHeight(lastPiece[0], lastPiece[1]);
         }
+        var split = pieces.length > 1;
+        pieces.forEach(function (p) { drawBlockPart(row, hasJobNo && !split, p[0], p[1]); });
         r += lineCount;
       });
 
